@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "468239101940",
+    "project_id": "athly-cc325",
+    "storage_bucket": "athly-cc325.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:468239101940:android:9fe31041f7cf02573113a1",
+        "android_client_info": {
+          "package_name": "com.example.athlynew"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDsQp4qJfXBfBxflapB_fr6n9h32XgvKQM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
