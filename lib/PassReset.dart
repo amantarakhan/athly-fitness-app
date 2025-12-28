@@ -1,4 +1,5 @@
 import 'package:athlynew/colors.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -19,46 +20,54 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     super.dispose();
   }
 
-  void _sendLink() async {
-  // 1) Close the keyboard
-  FocusScope.of(context).unfocus();
+  // === This is the function from the PDF (with UI feedback added) ===
+  Future<void> resetPassword() async {
+    // 1) Close keyboard
+    FocusScope.of(context).unfocus();
 
-  // 2) Validate
-  final form = _formKey.currentState;
-  if (form == null) return;
-  if (!form.validate()) return;
+    // 2) Validate form
+    final form = _formKey.currentState;
+    if (form == null) return;
+    if (!form.validate()) return;
 
-  final email = _emailCtrl.text.trim();
+    final email = _emailCtrl.text.trim();
 
-  try {
-    // TODO: backend call later (await yourAuth.reset(email))
-    // Simulate a short delay to mimic a real call
-    await Future.delayed(const Duration(milliseconds: 300));
+    try {
+      // Core line from the PDF:
+      await FirebaseAuth.instance
+          .sendPasswordResetEmail(email: email);
 
-    if (!mounted) return; // 3) Guard against unmounted context
+      if (!mounted) return;
 
-    // 4) Show success
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
+      // Success message
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            content: Text('Reset link sent to $email'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Reset link sent to $email'),
-          behavior: SnackBarBehavior.floating,
+          content: Text(e.message ?? 'Failed to send reset email.'),
+          backgroundColor: Colors.redAccent,
         ),
       );
-  } catch (e, st) {
-    // 5) Surface any errors instead of crashing
-    debugPrint('Reset error: $e\n$st');
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Something went wrong. Please try again.'),
-        backgroundColor: Colors.redAccent,
-      ),
-    );
+    } catch (e, st) {
+      // Fallback for any unexpected error
+      debugPrint('Reset error: $e\n$st');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Something went wrong. Please try again.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
   }
-}
-
 
   @override
   Widget build(BuildContext context) {
@@ -70,7 +79,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       body: SafeArea(
         child: Stack(
           children: [
-            // ▼ Illustration placed low & centered (not at top), subtle glow
+            // ▼ Illustration at the bottom
             Positioned(
               left: 0,
               right: 0,
@@ -94,7 +103,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                           ],
                         ),
                         child: Image.asset(
-                          'assets/images/meditation.png', // put your file here
+                          'assets/images/meditation.png',
                           fit: BoxFit.contain,
                         ),
                       ),
@@ -118,7 +127,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                       Text(
                         'Reset Password',
                         style: textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w800, // like your “Create Account”
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -137,7 +146,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                         textInputAction: TextInputAction.done,
                         decoration: InputDecoration(
                           hintText: 'Email',
-                          prefixIcon: const Icon(Icons.alternate_email_rounded),
+                          prefixIcon:
+                              const Icon(Icons.alternate_email_rounded),
                           filled: true,
                           fillColor: Colors.white,
                           contentPadding: const EdgeInsets.symmetric(
@@ -149,7 +159,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                           ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide(color: Colors.black12),
+                            borderSide: const BorderSide(
+                              color: Colors.black12,
+                            ),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
@@ -164,29 +176,29 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                           }
                           return null;
                         },
-                        onFieldSubmitted: (_) => _sendLink(),
+                        onFieldSubmitted: (_) => resetPassword(),
                       ),
 
                       const SizedBox(height: 20),
 
-                      // Send link button (navy style like your screenshot)
+                      // Send link button
                       SizedBox(
                         width: double.infinity,
                         height: 56,
                         child: ElevatedButton(
-                          onPressed: _sendLink,
+                          onPressed: resetPassword,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.navy, // your navy
+                            backgroundColor: AppColors.navy,
                             shadowColor: Colors.black26,
                             elevation: 6,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(18),
                             ),
                           ),
-                          child:  const Text(
+                          child: const Text(
                             'Send Reset Link',
                             style: TextStyle(
-                              color: Colors.white ,
+                              color: Colors.white,
                               fontWeight: FontWeight.w700,
                               fontSize: 16,
                             ),
@@ -196,7 +208,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
 
                       const SizedBox(height: 16),
 
-                      // Back to login (orange link like your style)
+                      // Back to login
                       Center(
                         child: Text.rich(
                           TextSpan(
@@ -208,12 +220,12 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                               TextSpan(
                                 text: 'Log In',
                                 style: const TextStyle(
-                                  color: Colors.orange, // your accent
+                                  color: Colors.orange,
                                   fontWeight: FontWeight.w600,
                                 ),
                                 recognizer: TapGestureRecognizer()
                                   ..onTap = () {
-                                    Navigator.pop(context); // back to login
+                                    Navigator.pop(context);
                                   },
                               ),
                             ],

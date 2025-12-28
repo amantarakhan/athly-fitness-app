@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:athlynew/colors.dart';
 
 class ClassicTimerView extends StatefulWidget {
@@ -9,10 +10,12 @@ class ClassicTimerView extends StatefulWidget {
   State<ClassicTimerView> createState() => _ClassicTimerViewState();
 }
 
-class _ClassicTimerViewState extends State<ClassicTimerView> {
+class _ClassicTimerViewState extends State<ClassicTimerView> with SingleTickerProviderStateMixin {
   bool _isCountdown = true;
   bool _isRunning = false;
   Timer? _timer;
+  late AnimationController _scaleController;
+  late Animation<double> _scaleAnimation;
 
   // Countdown: default 5 minutes (300 seconds)
   static const int _defaultCountdownSeconds = 300;
@@ -24,9 +27,33 @@ class _ClassicTimerViewState extends State<ClassicTimerView> {
   static const int _stopwatchVisualMax = 600; // 10 minutes for progress ring
 
   @override
+  void initState() {
+    super.initState();
+    // Setup scale animation for pulse effect
+    _scaleController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.05).animate(
+      CurvedAnimation(parent: _scaleController, curve: Curves.easeInOut),
+    );
+    _scaleController.repeat(reverse: true);
+  }
+
+  @override
   void dispose() {
     _timer?.cancel();
+    _scaleController.dispose();
     super.dispose();
+  }
+
+  // ---------- Haptic Feedback ----------
+  void _triggerHaptic() {
+    HapticFeedback.mediumImpact();
+  }
+
+  void _triggerSuccessHaptic() {
+    HapticFeedback.heavyImpact();
   }
 
   // ---------- Time helpers ----------
@@ -73,7 +100,7 @@ class _ClassicTimerViewState extends State<ClassicTimerView> {
         } else {
           t.cancel();
           setState(() => _isRunning = false);
-          // Optional: show a SnackBar or sound here
+          _triggerSuccessHaptic();
         }
       } else {
         setState(() {
@@ -82,11 +109,13 @@ class _ClassicTimerViewState extends State<ClassicTimerView> {
       }
     });
     setState(() => _isRunning = true);
+    _triggerHaptic();
   }
 
   void _pauseTimer() {
     _timer?.cancel();
     setState(() => _isRunning = false);
+    _triggerHaptic();
   }
 
   void _resetTimer() {
@@ -96,6 +125,7 @@ class _ClassicTimerViewState extends State<ClassicTimerView> {
       _remainingSeconds = _totalCountdownSeconds;
       _elapsedSeconds = 0;
     });
+    _triggerHaptic();
   }
 
   void _switchMode(bool toCountdown) {
@@ -106,6 +136,7 @@ class _ClassicTimerViewState extends State<ClassicTimerView> {
       _remainingSeconds = _totalCountdownSeconds;
       _elapsedSeconds = 0;
     });
+    _triggerHaptic();
   }
 
   // ---------- Bottom sheet: pick countdown time ----------
@@ -255,21 +286,27 @@ class _ClassicTimerViewState extends State<ClassicTimerView> {
                         ),
                         const SizedBox(height: 24),
 
-                        // Circular timer
-                        _TimerCircle(
-                          timeText: _timeText,
-                          progress: _progress,
+                        // Circular timer with scale animation
+                        AnimatedBuilder(
+                          animation: _scaleAnimation,
+                          builder: (context, child) {
+                            return Transform.scale(
+                              scale: _isRunning ? _scaleAnimation.value : 1.0,
+                              child: child,
+                            );
+                          },
+                          child: _TimerCircle(
+                            timeText: _timeText,
+                            progress: _progress,
+                          ),
                         ),
-
                         const SizedBox(height: 16),
 
-                        // Tap text
-                        GestureDetector(
+                        // Tap to set / start instructions
+                        InkWell(
                           onTap: () {
-                            if (_isCountdown) {
+                            if (_isCountdown && !_isRunning) {
                               _pickCountdownTime();
-                            } else {
-                              // you could start stopwatch on tap if you want later
                             }
                           },
                           child: Text(
@@ -355,8 +392,8 @@ class _ClassicTimerViewState extends State<ClassicTimerView> {
                           _startTimer();
                         }
                       },
-                      icon: const Icon(
-                        Icons.play_arrow_rounded,
+                      icon: Icon(
+                        _isRunning ? Icons.pause_rounded : Icons.play_arrow_rounded,
                         size: 38,
                         color: Colors.white,
                       ),
@@ -458,7 +495,7 @@ class _ModeChip extends StatelessWidget {
   }
 }
 
-// ===== Circular Timer Ring =====
+// ===== Circular Timer Ring with Hero Typography & Thin Progress =====
 
 class _TimerCircle extends StatelessWidget {
   final String timeText;
@@ -471,55 +508,58 @@ class _TimerCircle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-
     return SizedBox(
-      width: 190,
-      height: 190,
+      width: 220,
+      height: 220,
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // Background ring
+          // Background ring (thin)
           SizedBox(
-            width: 190,
-            height: 190,
+            width: 220,
+            height: 220,
             child: CircularProgressIndicator(
               value: 1,
-              strokeWidth: 10,
+              strokeWidth: 6, // Thin progress indicator
               valueColor: AlwaysStoppedAnimation(
-                AppColors.accentBlue.withOpacity(0.25),
+                AppColors.accentBlue.withOpacity(0.2),
               ),
             ),
           ),
-          // Foreground progress
+          // Foreground progress (thin)
           SizedBox(
-            width: 190,
-            height: 190,
+            width: 220,
+            height: 220,
             child: CircularProgressIndicator(
               value: progress,
-              strokeWidth: 10,
+              strokeWidth: 6, // Thin progress indicator
               strokeCap: StrokeCap.round,
               valueColor: const AlwaysStoppedAnimation(AppColors.primary),
               backgroundColor: Colors.transparent,
             ),
           ),
-          // Time text
+          // Hero timer typography
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
                 timeText,
-                style: textTheme.displaySmall?.copyWith(
-                  fontWeight: FontWeight.w700,
+                style: const TextStyle(
+                  fontSize: 56, // Hero size - much larger
+                  fontWeight: FontWeight.w800, // Extra bold
                   color: AppColors.textDark,
-                  letterSpacing: 2,
+                  letterSpacing: -1,
+                  height: 1.0,
                 ),
               ),
               const SizedBox(height: 4),
               Text(
                 'minutes',
-                style: textTheme.bodySmall?.copyWith(
-                  color: AppColors.textDark.withOpacity(0.6),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.textDark.withOpacity(0.5),
+                  letterSpacing: 0.5,
                 ),
               ),
             ],

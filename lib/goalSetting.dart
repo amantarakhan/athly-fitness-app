@@ -2,6 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:athlynew/colors.dart';
 import 'package:athlynew/AppShell.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class GoalPreferences {
   final String goal;          // Build Muscle, Lose Weight, Improve Stamina, Maintain Fitness
@@ -36,6 +38,7 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
   String? _frequency;
   String? _timeOfDay;
   String? _level;
+  bool _isSaving = false;
 
   final _goals = const [
     'Build Muscle',
@@ -68,20 +71,76 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
       );
       return;
     }
-    final prefs = GoalPreferences(
-      goal: _goal!,
-      frequency: _frequency!,
-      timeOfDay: _timeOfDay!,
-      level: _level!,
-    );
-  // ✅ Preload heavy images used on the next screen to avoid jank/ANR
-await precacheImage(const AssetImage('assets/images/treadmill.png'), context);
 
-  
-Navigator.of(context).pushAndRemoveUntil(
-  MaterialPageRoute(builder: (contex) => AppShell(prefs: prefs)), // pass prefs here
-  (route) => false,
-  );
+    if (_isSaving) return;
+
+    setState(() => _isSaving = true);
+    print('\n🟦🟦🟦 SAVING GOAL PREFERENCES 🟦🟦🟦');
+
+    try {
+      final prefs = GoalPreferences(
+        goal: _goal!,
+        frequency: _frequency!,
+        timeOfDay: _timeOfDay!,
+        level: _level!,
+      );
+
+      print('📝 Goal: ${prefs.goal}');
+      print('📝 Frequency: ${prefs.frequency}');
+      print('📝 Time of Day: ${prefs.timeOfDay}');
+      print('📝 Level: ${prefs.level}');
+
+      // Save to Firestore if user is logged in
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        print('🔵 Saving preferences to Firestore for user: ${user.uid}');
+        
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .set(prefs.toJson(), SetOptions(merge: true));
+        
+        print('✅ Preferences saved to Firestore!');
+      } else {
+        print('⚠️ No user logged in, preferences not saved to Firestore');
+      }
+
+      // Preload heavy images
+      print('🔵 Preloading images...');
+      await precacheImage(const AssetImage('assets/images/treadmill.png'), context);
+      print('✅ Images preloaded!');
+
+      if (!mounted) {
+        print('⚠️ Widget not mounted, cannot navigate');
+        return;
+      }
+
+      print('🔵 Navigating to AppShell...');
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => AppShell(prefs: prefs)),
+        (route) => false,
+      );
+      print('✅ Navigation completed!');
+      print('🟩🟩🟩 GOAL SETTING COMPLETED 🟩🟩🟩\n');
+
+    } catch (e, stackTrace) {
+      print('\n❌❌❌ ERROR SAVING PREFERENCES ❌❌❌');
+      print('Error: $e');
+      print('StackTrace: $stackTrace');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to save preferences: $e'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
   }
 
   @override
@@ -147,14 +206,14 @@ Navigator.of(context).pushAndRemoveUntil(
                     const SizedBox(height: 16),
                     _QuestionCard(
                       title: "When do you prefer to work out?",
-                      subtitle: "We’ll suggest times that fit your day.",
+                      subtitle: "We'll suggest times that fit your day.",
                       options: _times,
                       selected: _timeOfDay,
                       onSelect: (v) => setState(() => _timeOfDay = v),
                     ),
                     const SizedBox(height: 16),
                     _QuestionCard(
-                      title: "What’s your current fitness level?",
+                      title: "What's your current fitness level?",
                       subtitle: "So we tailor the intensity properly.",
                       options: _levels,
                       selected: _level,
@@ -174,7 +233,7 @@ Navigator.of(context).pushAndRemoveUntil(
                 child: SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _canSave ? _save : null,
+                    onPressed: (_canSave && !_isSaving) ? _save : null,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.navy,
                       foregroundColor: Colors.white,
@@ -184,14 +243,23 @@ Navigator.of(context).pushAndRemoveUntil(
                       ),
                       elevation: 2,
                     ),
-                    child: const Text(
-                      'Save & Continue',
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                      ),
-                    ),
+                    child: _isSaving
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text(
+                            'Save & Continue',
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              fontWeight: FontWeight.w600,
+                              fontSize: 16,
+                            ),
+                          ),
                   ),
                 ),
               ),

@@ -1,6 +1,9 @@
+import 'package:athlynew/AppShell.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'colors.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -23,16 +26,15 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  Future<void> _submit() async {
-    final f = _formKey.currentState;
-    if (f == null || !f.validate()) return;
-    setState(() => _isSubmitting = true);
-    await Future.delayed(const Duration(milliseconds: 800));
-    if (!mounted) return;
-    setState(() => _isSubmitting = false);
-    Navigator.pushNamedAndRemoveUntil(context, '/app', (route) => false);
-
-  }
+Future<void> login() async { 
+try { 
+final userCredential = await FirebaseAuth.instance 
+.signInWithEmailAndPassword( 
+email: _emailCtrl.text.trim(), 
+password: _passwordCtrl.text.trim()); 
+} catch (e) { 
+} 
+}
 
   InputDecoration _dec(String label, IconData icon, {Widget? suffix}) {
     return InputDecoration(
@@ -166,7 +168,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       controller: _passwordCtrl,
                       obscureText: _obscure,
                       textInputAction: TextInputAction.done,
-                      onFieldSubmitted: (_) => _submit(),
                       decoration: _dec(
                         'Password',
                         Icons.lock_outline_rounded,
@@ -226,7 +227,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: _isSubmitting ? null : _submit,
+                        onPressed: _isSubmitting ? null : login  ,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.navy,
                           foregroundColor: Colors.white,

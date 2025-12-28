@@ -1,29 +1,333 @@
+// lib/home.dart
 import 'package:flutter/material.dart';
 import 'package:athlynew/colors.dart';
 import 'package:athlynew/goalSetting.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:athlynew/services/workout_plan_service.dart';
+import 'package:athlynew/tabs/workouts.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   final GoalPreferences? prefs;
   const HomeScreen({super.key, this.prefs});
 
   @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
+  int _streakDays = 0;
+  int _totalPoints = 0;
+  bool _isLoadingStreak = true;
+  bool _isLoadingPoints = true;
+  DailyWorkout? _todaysWorkout;
+  bool _isTodayCompleted = false;
+  
+  // Hydration tracking
+  int _hydrationCurrent = 0;
+  int _hydrationGoal = 8;
+  bool _isLoadingHydration = true;
+  bool _isAddingWater = false; // Prevent spam taps
+  
+  // Animation controller for water tap
+  late AnimationController _waterAnimController;
+  late Animation<double> _waterScaleAnim;
+  
+  // Calories tracking
+  int _caloriesCurrent = 0;
+  int _caloriesGoal = 2200;  // Will be updated based on user goal
+
+  @override
+  void initState() {
+    super.initState();
+    _setCalorieGoal();  // Set calorie goal based on user's fitness goal
+    _loadUserData();
+    _loadHydration();
+    _loadCalories();
+    
+    // Setup water tap animation
+    _waterAnimController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _waterScaleAnim = Tween<double>(begin: 1.0, end: 1.1).animate(
+      CurvedAnimation(parent: _waterAnimController, curve: Curves.easeOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _waterAnimController.dispose();
+    super.dispose();
+  }
+
+  void _setCalorieGoal() {
+    final goal = widget.prefs?.goal ?? "Maintain Fitness";
+    
+    // Set calorie goal based on fitness goal
+    switch (goal) {
+      case "Build Muscle":
+        _caloriesGoal = 2800;  // Higher calories for muscle building
+        break;
+      case "Lose Weight":
+        _caloriesGoal = 1800;  // Lower calories for weight loss
+        break;
+      case "Improve Stamina":
+        _caloriesGoal = 2400;  // Moderate-high for endurance
+        break;
+      case "Maintain Fitness":
+      default:
+        _caloriesGoal = 2200;  // Maintenance calories
+        break;
+    }
+  }
+
+  Future<void> _loadHydration() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      setState(() => _isLoadingHydration = false);
+      return;
+    }
+
+    final today = _getDateString(DateTime.now());
+    
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('hydration')
+          .doc(today)
+          .get();
+
+      if (mounted) {
+        setState(() {
+          _hydrationCurrent = doc.data()?['cups'] ?? 0;
+          _isLoadingHydration = false;
+        });
+      }
+    } catch (e) {
+      print('❌ Error loading hydration: $e');
+      if (mounted) {
+        setState(() => _isLoadingHydration = false);
+      }
+    }
+  }
+
+  Future<void> _addHydration() async {
+    // Prevent spam taps
+    if (_isAddingWater) return;
+    
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    if (_hydrationCurrent >= _hydrationGoal) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('🎉 Daily hydration goal reached!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isAddingWater = true);
+    
+    // ✨ Play animation
+    _waterAnimController.forward().then((_) {
+      _waterAnimController.reverse();
+    });
+
+    final today = _getDateString(DateTime.now());
+    final newCount = _hydrationCurrent + 1;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('hydration')
+          .doc(today)
+          .set({
+        'cups': newCount,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      setState(() {
+        _hydrationCurrent = newCount;
+      });
+
+      if (newCount == _hydrationGoal) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('💧 Hydration goal completed!'),
+            backgroundColor: Colors.blue,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Error adding hydration: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to update hydration'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      // Re-enable after 500ms debounce
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          setState(() => _isAddingWater = false);
+        }
+      });
+    }
+  }
+
+  Future<void> _loadCalories() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      // Calculate calories based on completed workouts
+      final workoutsSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('workouts')
+          .where('completed', isEqualTo: true)
+          .get();
+
+      int totalCalories = 0;
+      for (var doc in workoutsSnapshot.docs) {
+        // Each workout burns approximately 150 calories
+        totalCalories += 150;
+      }
+
+      if (mounted) {
+        setState(() {
+          _caloriesCurrent = totalCalories;
+        });
+      }
+    } catch (e) {
+      print('❌ Error loading calories: $e');
+    }
+  }
+
+  Future<void> _loadUserData() async {
+    setState(() {
+      _isLoadingStreak = true;
+      _isLoadingPoints = true;
+    });
+    
+    try {
+      // Load streak, points, and today's workout in parallel
+      final results = await Future.wait([
+        WorkoutPlanService.getCurrentStreak(),
+        WorkoutPlanService.getTotalPoints(),
+        WorkoutPlanService.getTodaysWorkout(),
+        WorkoutPlanService.isTodayWorkoutCompleted(),
+      ]).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          print('⚠️ Timeout loading user data, using defaults');
+          return [0, 0, WorkoutPlanService.weeklyPlan[0], false];
+        },
+      );
+      
+      if (mounted) {
+        setState(() {
+          _streakDays = results[0] as int;
+          _totalPoints = results[1] as int;
+          _todaysWorkout = results[2] as DailyWorkout;
+          _isTodayCompleted = results[3] as bool;
+          _isLoadingStreak = false;
+          _isLoadingPoints = false;
+        });
+        
+        // Reload calories after workout data is loaded
+        _loadCalories();
+      }
+    } catch (e) {
+      print('❌ Error loading user data: $e');
+      if (mounted) {
+        setState(() {
+          _streakDays = 0;
+          _totalPoints = 0;
+          _todaysWorkout = WorkoutPlanService.weeklyPlan[0];
+          _isTodayCompleted = false;
+          _isLoadingStreak = false;
+          _isLoadingPoints = false;
+        });
+      }
+    }
+  }
+
+  String _getDateString(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // ------- TEMP STATIC DATA (later: from Firebase) -------
-    final goal = prefs?.goal ?? "Maintain Fitness";
-    const streakDays = 7;
-
-    const caloriesCurrent = 950;
-    const caloriesGoal = 2200;
-
-    const hydrationCurrent = 4;
-    const hydrationGoal = 8;
-
+    final goal = widget.prefs?.goal ?? "Maintain Fitness";
     const dailyHighlight = "Remember to stretch!";
-    // -------------------------------------------------------
 
     final focusLabel = _focusBasedOnGoal(goal);
     final motivation = _motivationTip(goal);
 
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      return _buildGuestHome(context, focusLabel, motivation, 0, 0, dailyHighlight);
+    }
+
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+          return Scaffold(
+            backgroundColor: AppColors.background,
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        String userName = 'User';
+        if (snapshot.hasData && snapshot.data!.exists) {
+          final data = snapshot.data!.data() as Map<String, dynamic>?;
+          userName = data?['name'] ?? user.displayName ?? 'User';
+        } else if (user.displayName != null && user.displayName!.isNotEmpty) {
+          userName = user.displayName!;
+        }
+
+        final firstName = userName.split(' ')[0];
+
+        return _buildHomeContent(
+          context,
+          firstName,
+          focusLabel,
+          motivation,
+          _streakDays,
+          _totalPoints,
+          _isLoadingStreak,
+          _isLoadingPoints,
+          dailyHighlight,
+        );
+      },
+    );
+  }
+
+  Widget _buildHomeContent(
+    BuildContext context,
+    String firstName,
+    String focusLabel,
+    String motivation,
+    int streakDays,
+    int totalPoints,
+    bool isLoadingStreak,
+    bool isLoadingPoints,
+    String dailyHighlight,
+  ) {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -39,85 +343,163 @@ class HomeScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 👋 Greeting
-                const Text(
-                  "Hey, John!",
-                  style: TextStyle(
-                    fontFamily: "Poppins",
-                    fontWeight: FontWeight.w800,
-                    fontSize: 28,
-                  ),
+                // Header with name - IMPROVED
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "Hey, $firstName!",
+                            style: const TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textDark,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          // Streak
+                          isLoadingStreak
+                              ? const Row(
+                                  children: [
+                                    SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    ),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      "Loading...",
+                                      style: TextStyle(
+                                        fontFamily: "Poppins",
+                                        fontSize: 14,
+                                        color: Colors.black54,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : Text(
+                                  streakDays > 0
+                                      ? "$streakDays-day streak 🔥"
+                                      : "Start your streak! 💪",
+                                  style: const TextStyle(
+                                    fontFamily: "Poppins",
+                                    fontSize: 15,
+                                    color: Colors.black54,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                        ],
+                      ),
+                    ),
+                    // Points Badge - IMPROVED
+                    if (!isLoadingPoints)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [AppColors.primary, Colors.orangeAccent.shade400],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primary.withOpacity(0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.star_rounded, size: 20, color: Colors.white),
+                            const SizedBox(width: 6),
+                            Text(
+                              "$totalPoints pts",
+                              style: const TextStyle(
+                                fontFamily: "Poppins",
+                                fontSize: 14,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  "$streakDays-day streak – keep going! 🔥",
-                  style: const TextStyle(
-                    fontFamily: "Poppins",
-                    fontSize: 14,
-                    color: Colors.black54,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-          
-                const SizedBox(height: 24),
-          
-                // 🧡 Today's Workout card
-                _todayWorkoutCard(
-                  context,
-                  title: "Today's Workout",
-                  focusLabel: focusLabel,
-                  duration: "35 mins",
-                  onStart: () {
-                    // TODO: Navigate to today's workout
-                  },
-                ),
-          
-                const SizedBox(height: 24),
-          
-                // 📊 Stats row (Calories / Hydration / Motivation)
+                
+                const SizedBox(height: 28),
+
+                // Today's Workout Card
+                _todayWorkoutCard(context),
+
+                const SizedBox(height: 20),
+
+                // Stats Row - IMPROVED (2 columns for better visibility)
                 Row(
                   children: [
                     Expanded(
                       child: _statCard(
-                        color: AppColors.accentBlue,
-                        icon: Icons.local_fire_department_outlined,
+                        color: AppColors.accentBlue.withOpacity(0.3),
+                        icon: Icons.local_fire_department_rounded,
                         label: "Calories",
-                        value: "$caloriesCurrent / $caloriesGoal",
+                        value: "$_caloriesCurrent / $_caloriesGoal",
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 12),
                     Expanded(
-                      child: _statCard(
-                        color: AppColors.secondary,
-                        icon: Icons.water_drop_outlined,
-                        label: "Hydration",
-                        value: "$hydrationCurrent / $hydrationGoal",
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _statCard(
-                        color: Colors.amberAccent.shade100,
-                        icon: Icons.star_border_rounded,
-                        label: "Motivation",
-                        value: motivation,
+                      child: GestureDetector(
+                        onTap: _addHydration,
+                        child: AnimatedBuilder(
+                          animation: _waterScaleAnim,
+                          builder: (context, child) {
+                            return Transform.scale(
+                              scale: _waterScaleAnim.value,
+                              child: _isLoadingHydration
+                                  ? Container(
+                                      constraints: const BoxConstraints(
+                                        minHeight: 150,
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 16, vertical: 16),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.accentBlue.withOpacity(0.3),
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: const Center(
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.black87,
+                                        ),
+                                      ),
+                                    )
+                                  : _buildHydrationCard(_hydrationCurrent / _hydrationGoal),
+                            );
+                          },
+                        ),
                       ),
                     ),
                   ],
                 ),
-          
-                const SizedBox(height: 24),
-          
-                // 💡 Daily Highlight
+
+                const SizedBox(height: 20),
+
                 _dailyHighlightCard(
                   icon: Icons.lightbulb_outline,
                   title: "Daily Highlight",
                   subtitle: dailyHighlight,
                 ),
-          
+
                 const SizedBox(height: 28),
-          
-                // ✅ Recommended section
+
                 const Text(
                   "Recommended For You",
                   style: TextStyle(
@@ -128,7 +510,7 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
-          
+
                 SizedBox(
                   height: 150,
                   child: ListView(
@@ -160,94 +542,295 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  // ============ UI HELPERS ============
+  Widget _todayWorkoutCard(BuildContext context) {
+    if (_todaysWorkout == null) {
+      return Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black12.withOpacity(.06),
+              blurRadius: 16,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
 
-  Widget _todayWorkoutCard(
-    BuildContext context, {
-    required String title,
-    required String focusLabel,
-    required String duration,
-    required VoidCallback onStart,
-  }) {
+    final workout = _todaysWorkout!;
+
+    // Rest Day Card
+    if (workout.isRestDay) {
+      return Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black12.withOpacity(.06),
+              blurRadius: 16,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "Today's Workout",
+                    style: TextStyle(
+                      fontFamily: "Poppins",
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.spa_outlined,
+                        size: 20,
+                        color: Colors.green.shade600,
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          workout.title,
+                          style: TextStyle(
+                            fontFamily: "Poppins",
+                            fontSize: 14,
+                            color: Colors.green.shade700,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    workout.description,
+                    style: const TextStyle(
+                      fontFamily: "Poppins",
+                      fontSize: 12,
+                      color: Colors.black54,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Regular Workout Card - IMPROVED
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white,
+            AppColors.background,
+          ],
+        ),
         borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.black.withOpacity(0.05), width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black12.withOpacity(.06),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
+            color: Colors.black.withOpacity(.08),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Left side: text
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontFamily: "Poppins",
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.black87,
+          const Text(
+            "Today's Workout",
+            style: TextStyle(
+              fontFamily: "Poppins",
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: Colors.black87,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              // Workout Icon with gradient background
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [AppColors.navy.withOpacity(0.1), AppColors.secondary.withOpacity(0.1)],
                   ),
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                const SizedBox(height: 8),
-                Row(
+                child: const Icon(
+                  Icons.fitness_center_rounded,
+                  size: 24,
+                  color: AppColors.navy,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(
-                      Icons.fitness_center_rounded,
-                      size: 20,
-                      color: Colors.grey,
-                    ),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        "$focusLabel · $duration",
-                        style: const TextStyle(
-                          fontFamily: "Poppins",
-                          fontSize: 14,
-                          color: Colors.black87,
-                          fontWeight: FontWeight.w500,
-                        ),
+                    Text(
+                      workout.title,
+                      style: const TextStyle(
+                        fontFamily: "Poppins",
+                        fontSize: 16,
+                        color: Colors.black87,
+                        fontWeight: FontWeight.w700,
                       ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      workout.description,
+                      style: const TextStyle(
+                        fontFamily: "Poppins",
+                        fontSize: 13,
+                        color: Colors.black54,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Right side: Start button
-          ElevatedButton(
-            onPressed: onStart,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(999),
               ),
-              elevation: 0,
-            ),
-            child: const Text(
-              "Start",
-              style: TextStyle(
-                fontFamily: "Poppins",
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
+            ],
+          ),
+          const SizedBox(height: 16),
+          // Action Button
+          if (_isTodayCompleted)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.green.shade200, width: 2),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.check_circle_rounded, size: 20, color: Colors.green.shade700),
+                  const SizedBox(width: 8),
+                  Text(
+                    "Completed",
+                    style: TextStyle(
+                      fontFamily: "Poppins",
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                      color: Colors.green.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () async {
+                  // Navigate to workout detail
+                  final workoutDetails = WorkoutPlanService.getTodaysWorkoutDetails(workout);
+                  
+                  if (workoutDetails != null) {
+                    // Navigate to existing workout detail screen
+                    await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => WorkoutDetailScreen(
+                          workout: workoutDetails,
+                          isFromTodayPlan: true,
+                        ),
+                      ),
+                    );
+                    // Reload data after returning
+                    _loadUserData();
+                  } else {
+                    // Show message for workouts without detail screen
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Complete: ${workout.description}'),
+                          action: SnackBarAction(
+                            label: 'Done',
+                            onPressed: () async {
+                              await WorkoutPlanService.completeWorkout('All levels');
+                              _loadUserData();
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('🎉 Workout completed!'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                        ),
+                      );
+                    }
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.navy,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  elevation: 0,
+                ),
+                child: const Text(
+                  "Start Workout",
+                  style: TextStyle(
+                    fontFamily: "Poppins",
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
               ),
             ),
-          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildGuestHome(
+    BuildContext context,
+    String focusLabel,
+    String motivation,
+    int streakDays,
+    int totalPoints,
+    String dailyHighlight,
+  ) {
+    return _buildHomeContent(
+      context,
+      'Guest',
+      focusLabel,
+      motivation,
+      0,
+      0,
+      false,
+      false,
+      dailyHighlight,
     );
   }
 
@@ -256,43 +839,70 @@ class HomeScreen extends StatelessWidget {
     required IconData icon,
     required String label,
     required String value,
+    bool isInteractive = false,
   }) {
     return Container(
       constraints: const BoxConstraints(
-      minHeight: 140, // 👈 tweak this number if you want taller/shorter
-    ),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        minHeight: 150,
+      ),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: color,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
+        border: isInteractive ? Border.all(color: Colors.blue.shade700, width: 2) : null,
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 22, color: Colors.black87),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.9),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, size: 28, color: Colors.black87),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            label,
+            style: const TextStyle(
+              fontFamily: "Poppins",
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontFamily: "Poppins",
+              fontSize: 13,
+              color: Colors.black87,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (isInteractive) ...[
             const SizedBox(height: 6),
             Text(
-              label,
-              style: const TextStyle(
+              'Tap to add',
+              style: TextStyle(
                 fontFamily: "Poppins",
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              value,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: "Poppins",
-                fontSize: 12,
-                color: Colors.black87,
+                fontSize: 11,
+                color: Colors.blue.shade900,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -303,26 +913,41 @@ class HomeScreen extends StatelessWidget {
     required String subtitle,
   }) {
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.amber.shade50,
+            Colors.orange.shade50,
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.amber.shade200, width: 1.5),
         boxShadow: [
           BoxShadow(
-            color: Colors.black12.withOpacity(.06),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
+            color: Colors.amber.withOpacity(.15),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
       child: Row(
         children: [
-          Icon(
-            icon,
-            size: 26,
-            color: Colors.amber.shade700,
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(
+              icon,
+              size: 28,
+              color: Colors.amber.shade700,
+            ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -339,10 +964,11 @@ class HomeScreen extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: "Poppins",
                     fontSize: 14,
-                    color: Colors.black87,
+                    color: Colors.black.withOpacity(0.7),
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
@@ -376,7 +1002,6 @@ class HomeScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Placeholder "illustration"
           Expanded(
             child: Center(
               child: Icon(
@@ -410,8 +1035,6 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  // ============ LOGIC HELPERS ============
-
   static String _focusBasedOnGoal(String goal) {
     switch (goal) {
       case "Build Muscle":
@@ -438,5 +1061,97 @@ class HomeScreen extends StatelessWidget {
       default:
         return "Stay consistent today!";
     }
+  }
+
+  Widget _buildHydrationCard(double progress) {
+    return Container(
+      constraints: const BoxConstraints(
+        minHeight: 150,
+      ),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.accentBlue.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.blue.shade300, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.accentBlue.withOpacity(0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.9),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.water_drop_rounded, size: 28, color: Colors.blue),
+              ),
+              const Spacer(),
+              if (_isAddingWater)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.blue,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            "Water Intake",
+            style: TextStyle(
+              fontFamily: "Poppins",
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            "$_hydrationCurrent / $_hydrationGoal glasses",
+            style: const TextStyle(
+              fontFamily: "Poppins",
+              fontSize: 13,
+              color: Colors.black87,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 10),
+          // 🌊 Progress bar
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 8,
+              backgroundColor: Colors.blue.shade100,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                progress >= 1.0 ? Colors.green : Colors.blue.shade700,
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            "Tap to add",
+            style: TextStyle(
+              fontFamily: "Poppins",
+              fontSize: 11,
+              color: Colors.blue.shade900,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
