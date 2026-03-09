@@ -1,4 +1,6 @@
-class Meal {
+
+// define data structure 
+class Meal { // a meal class 
   final String id;
   final String name;
   final String type;        // "Breakfast" / "Lunch" / "Dinner"
@@ -21,7 +23,7 @@ class Meal {
   /// Emoji representation for quick fallback
   final String emoji;
 
-  const Meal({
+  const Meal({ // a constructor 
     required this.id,
     required this.name,
     required this.type,
@@ -29,7 +31,7 @@ class Meal {
     required this.proteinGrams,
     required this.prepMinutes,
 
-    // 👇 these are optional so your old data still works
+    // 👇 these are optional 
     this.overview = '',
     this.ingredients = const [],
     this.steps = const [],
@@ -38,13 +40,14 @@ class Meal {
   });
 }
 
+//Groups all meals for a specific day 
 class DailyMealPlan {
   final DateTime date;
   final Meal breakfast;
   final Meal lunch;
   final Meal dinner;
 
-  const DailyMealPlan({
+  const DailyMealPlan({ // a constructor 
     required this.date,
     required this.breakfast,
     required this.lunch,

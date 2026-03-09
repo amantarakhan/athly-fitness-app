@@ -60,6 +60,7 @@ class TimerScreen extends StatelessWidget {
         ),
         body: const TabBarView(
           children: [
+            // the screen that we build before  
             ClassicTimerView(),
             IntervalTimerView(),
             CircuitTimerView(),

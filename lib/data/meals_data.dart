@@ -4,6 +4,7 @@ import 'package:athlynew/models/meal.dart';
 /// All possible meals with curated food images from Unsplash
 /// Images are free to use, high quality, and optimized for mobile
 
+// the real meal objects (total 27)
 const List<Meal> breakfastMeals = [
   Meal(
     id: 'veggie_omelette',
@@ -794,11 +795,25 @@ const List<Meal> dinnerMeals = [
 /// Picks a different set of meals for each calendar day, without Firebase.
 /// Same date => same combo. Next day => different combo.
 DailyMealPlan planForDate(DateTime date) {
-  // Number of days from a fixed start date.
-  final dayIndex = date.difference(DateTime(2025, 1, 1)).inDays;
+  // // Calculate days since Jan 1, 2025 - 356 days 
+  final dayIndex = date.difference(DateTime(2025, 1, 1)).inDays; 
+  // 1/1 index 0 
+  // 2/1 index 1 etc...
 
+  // Helper function to pick from list with offset
   int pickIndex(int listLength, int offset) =>
-      (dayIndex + offset) % listLength;
+      (dayIndex + offset) % listLength; // eg: dayIndex=0: (0+0) % 9 = 0 → breakfastMeals[0] (Veggie Omelette)
+
+//Use Different Offsets to get varied combination 
+// eg :Jan 1 (dayIndex=0):
+// ├─ Breakfast: (0+0) % 9 = 0 → Veggie Omelette
+// ├─ Lunch: (0+3) % 9 = 3 → Caprese Sandwich
+// └─ Dinner: (0+6) % 9 = 6 → Baked Fish Tacos
+
+// Jan 2 (dayIndex=1):
+// ├─ Breakfast: (1+0) % 9 = 1 → Overnight Oats
+// ├─ Lunch: (1+3) % 9 = 4 → Tuna Salad
+// └─ Dinner: (1+6) % 9 = 7 → Stuffed Bell Peppers
 
   final breakfast =
       breakfastMeals[pickIndex(breakfastMeals.length, 0)];
@@ -807,6 +822,7 @@ DailyMealPlan planForDate(DateTime date) {
   final dinner =
       dinnerMeals[pickIndex(dinnerMeals.length, 6)];
 
+// then return the meals eg: Day 0 (Jan 1): Veggie Omelette + Caprese Sandwich + Fish Tacos
   return DailyMealPlan(
     date: date,
     breakfast: breakfast,

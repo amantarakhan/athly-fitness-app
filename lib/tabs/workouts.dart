@@ -1,12 +1,15 @@
 // lib/workouts.dart
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:athlynew/colors.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:athlynew/models/workout.dart';
 import 'package:athlynew/data/workouts_data.dart';
 import 'package:athlynew/services/workout_plan_service.dart';
+import 'package:athlynew/providers/workout_provider.dart';
 
 // ---------- WORKOUTS SCREEN ----------
+// has 3 main components [WorkoutsScreen , _WorkoutCategorySection (Category Display) , _WorkoutCard (Single Workout Card)]
 
 class WorkoutsScreen extends StatelessWidget {
   const WorkoutsScreen({super.key});
@@ -29,8 +32,10 @@ class WorkoutsScreen extends StatelessWidget {
           ),
         ),
       ),
+      // the body -> the list
       body: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(24, 24, 24, kBottomNavigationBarHeight + 24),
+        padding: const EdgeInsets.fromLTRB(
+            24, 24, 24, kBottomNavigationBarHeight + 24),
         itemCount: workoutCategories.length,
         separatorBuilder: (_, __) => const SizedBox(height: 32),
         itemBuilder: (context, index) {
@@ -42,7 +47,7 @@ class WorkoutsScreen extends StatelessWidget {
   }
 }
 
-// ---------- CATEGORY SECTION (title + horizontal cards) ----------
+// ---------- 2 CATEGORY SECTION (title + horizontal cards) ----------
 
 class _WorkoutCategorySection extends StatelessWidget {
   final WorkoutCategory category;
@@ -93,7 +98,8 @@ class _WorkoutCategorySection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        // Grid of workouts
+
+        // Grid of workouts cards (2 columns)
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -114,7 +120,7 @@ class _WorkoutCategorySection extends StatelessWidget {
   }
 }
 
-// ---------- SINGLE WORKOUT CARD ----------
+// ---------- 3 SINGLE WORKOUT CARD ----------
 
 class _WorkoutCard extends StatelessWidget {
   final Workout workout;
@@ -252,7 +258,7 @@ class _WorkoutCard extends StatelessWidget {
       case 'advanced':
         return Colors.red;
       default:
-        return AppColors.primary;
+        return Colors.blueAccent;
     }
   }
 
@@ -266,7 +272,7 @@ class _WorkoutCard extends StatelessWidget {
   }
 }
 
-// ---------- WORKOUT DETAIL SCREEN ----------
+// ---------- 4 WORKOUT DETAIL SCREEN ----------
 
 class WorkoutDetailScreen extends StatefulWidget {
   final Workout workout;
@@ -284,25 +290,8 @@ class WorkoutDetailScreen extends StatefulWidget {
 
 class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
   bool _isCompleting = false;
-  bool _isCompleted = false;
 
-  @override
-  void initState() {
-    super.initState();
-    if (widget.isFromTodayPlan) {
-      _checkIfCompleted();
-    }
-  }
-
-  Future<void> _checkIfCompleted() async {
-    final completed = await WorkoutPlanService.isTodayWorkoutCompleted();
-    if (mounted) {
-      setState(() {
-        _isCompleted = completed;
-      });
-    }
-  }
-
+  // -----------Open YouTube Video method ------------
   Future<void> _openYoutube() async {
     if (await canLaunchUrlString(widget.workout.youtubeUrl)) {
       await launchUrlString(widget.workout.youtubeUrl,
@@ -311,34 +300,26 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
   }
 
   Future<void> _completeWorkout() async {
-    if (_isCompleting || _isCompleted) return;
+    final workoutProvider = context.read<WorkoutProvider>();
+    
+    // Check if already completed
+    if (_isCompleting || workoutProvider.isTodayCompleted) return;
 
     setState(() {
       _isCompleting = true;
     });
 
     try {
-      await WorkoutPlanService.completeWorkout(widget.workout.level);
-      
+      // Use provider to complete workout
+      await workoutProvider.completeWorkout(widget.workout.level);
+
       if (mounted) {
         setState(() {
-          _isCompleted = true;
           _isCompleting = false;
         });
 
-        // Calculate points earned
-        int points = 0;
-        switch (widget.workout.level) {
-          case 'Beginner':
-            points = 20;
-            break;
-          case 'Intermediate':
-            points = 60;
-            break;
-          case 'All levels':
-            points = 40;
-            break;
-        }
+        // Calculate points earned based on level
+        int points = _getPoints(widget.workout.level);
 
         // Show success dialog
         _showSuccessDialog(points);
@@ -348,7 +329,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
         setState(() {
           _isCompleting = false;
         });
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error completing workout: $e'),
@@ -359,6 +340,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     }
   }
 
+  // ------------ Success dialog ----------
   void _showSuccessDialog(int points) {
     showDialog(
       context: context,
@@ -387,7 +369,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                
+
                 // Congratulations Text
                 const Text(
                   'Workout Complete!',
@@ -400,10 +382,11 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 12),
-                
+
                 // Points Earned
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   decoration: BoxDecoration(
                     color: AppColors.primary,
                     borderRadius: BorderRadius.circular(999),
@@ -411,7 +394,8 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.star, size: 20, color: Colors.black87),
+                      const Icon(Icons.star,
+                          size: 20, color: Colors.black87),
                       const SizedBox(width: 8),
                       Text(
                         '+$points points earned!',
@@ -426,7 +410,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                
+
                 // Message
                 const Text(
                   'Great job! Your streak has been updated.',
@@ -438,13 +422,13 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),
-                
+
                 // Go Home Button
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: () {
-                      // Close dialog and navigate back to home
+                      // Close dialog and navigate back
                       Navigator.of(context).pop(); // Close dialog
                       Navigator.of(context).pop(); // Close workout detail
                     },
@@ -475,6 +459,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     );
   }
 
+  // ------------- UI / the workouts screen ----------
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
@@ -525,6 +510,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
               ),
             ),
             const SizedBox(height: 12),
+            // Open YouTube button
             Align(
               alignment: Alignment.center,
               child: TextButton.icon(
@@ -534,6 +520,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
               ),
             ),
             const SizedBox(height: 16),
+            // Level and Duration chips
             Row(
               children: [
                 Chip(
@@ -548,6 +535,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
               ],
             ),
             const SizedBox(height: 16),
+            // Overview
             Text(
               'Overview',
               style: textTheme.titleMedium?.copyWith(
@@ -562,65 +550,84 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                 color: AppColors.textDark,
               ),
             ),
-            
+
             // Done Button (only show if from today's plan)
             if (widget.isFromTodayPlan) ...[
               const SizedBox(height: 32),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isCompleted ? null : _completeWorkout,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _isCompleted ? Colors.green.shade400 : AppColors.navy,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 18),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    elevation: 0,
-                    disabledBackgroundColor: Colors.green.shade400,
-                    disabledForegroundColor: Colors.white,
-                  ),
-                  child: _isCompleting
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              _isCompleted ? Icons.check_circle : Icons.check_circle_outline,
-                              size: 24,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              _isCompleted ? 'Completed!' : 'Mark as Done',
-                              style: const TextStyle(
-                                fontFamily: "Poppins",
-                                fontWeight: FontWeight.w700,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
+              Consumer<WorkoutProvider>(
+                builder: (context, workoutProvider, child) {
+                  final isCompleted = workoutProvider.isTodayCompleted;
+
+                  return SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: isCompleted ? null : _completeWorkout,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isCompleted
+                            ? Colors.green.shade400
+                            : AppColors.navy,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 18),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                ),
+                        elevation: 0,
+                        disabledBackgroundColor: Colors.green.shade400,
+                        disabledForegroundColor: Colors.white,
+                      ),
+                      child: _isCompleting
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  isCompleted
+                                      ? Icons.check_circle
+                                      : Icons.check_circle_outline,
+                                  size: 24,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  isCompleted
+                                      ? 'Completed!'
+                                      : 'Mark as Done',
+                                  style: const TextStyle(
+                                    fontFamily: "Poppins",
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  );
+                },
               ),
               const SizedBox(height: 12),
-              if (!_isCompleted)
-                Text(
-                  'Complete this workout to earn ${_getPoints(widget.workout.level)} points!',
-                  style: const TextStyle(
-                    fontFamily: "Poppins",
-                    fontSize: 13,
-                    color: Colors.black54,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
+              // WORKOUT PROVIDER - In WorkoutDetailScreen for completion button
+              Consumer<WorkoutProvider>(
+                builder: (context, workoutProvider, child) {
+                  if (workoutProvider.isTodayCompleted) {
+                    return const SizedBox.shrink();
+                  }
+                  return Text(
+                    'Complete this workout to earn ${_getPoints(widget.workout.level)} points!',
+                    style: const TextStyle(
+                      fontFamily: "Poppins",
+                      fontSize: 13,
+                      color: Colors.black54,
+                    ),
+                    textAlign: TextAlign.center,
+                  );
+                },
+              ),
             ],
           ],
         ),

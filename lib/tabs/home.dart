@@ -1,11 +1,14 @@
 // lib/home.dart
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:athlynew/colors.dart';
 import 'package:athlynew/goalSetting.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:athlynew/services/workout_plan_service.dart';
 import 'package:athlynew/tabs/workouts.dart';
+import 'package:athlynew/providers/user_provider.dart';
+import 'package:athlynew/providers/workout_provider.dart';
+import 'package:athlynew/providers/hydration_provider.dart';
 
 class HomeScreen extends StatefulWidget {
   final GoalPreferences? prefs;
@@ -15,302 +18,90 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
-  int _streakDays = 0;
-  int _totalPoints = 0;
-  bool _isLoadingStreak = true;
-  bool _isLoadingPoints = true;
-  DailyWorkout? _todaysWorkout;
-  bool _isTodayCompleted = false;
-  
-  // Hydration tracking
-  int _hydrationCurrent = 0;
-  int _hydrationGoal = 8;
-  bool _isLoadingHydration = true;
-  bool _isAddingWater = false; // Prevent spam taps
-  
-  // Animation controller for water tap
-  late AnimationController _waterAnimController;
-  late Animation<double> _waterScaleAnim;
-  
-  // Calories tracking
+class _HomeScreenState extends State<HomeScreen> {
+  // Only calorie tracking remains as local state (calculated from workouts)
   int _caloriesCurrent = 0;
-  int _caloriesGoal = 2200;  // Will be updated based on user goal
+  int _caloriesGoal = 2200;
 
   @override
   void initState() {
     super.initState();
-    _setCalorieGoal();  // Set calorie goal based on user's fitness goal
-    _loadUserData();
-    _loadHydration();
-    _loadCalories();
+    _setCalorieGoal();
     
-    // Setup water tap animation
-    _waterAnimController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _waterScaleAnim = Tween<double>(begin: 1.0, end: 1.1).animate(
-      CurvedAnimation(parent: _waterAnimController, curve: Curves.easeOut),
-    );
+    // Initialize all providers after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<WorkoutProvider>().loadWorkoutData();
+      context.read<HydrationProvider>().loadHydration();
+      _loadCalories();
+    });
   }
 
-  @override
-  void dispose() {
-    _waterAnimController.dispose();
-    super.dispose();
-  }
-
+  // -------------------- Calories logic -------------------
   void _setCalorieGoal() {
     final goal = widget.prefs?.goal ?? "Maintain Fitness";
     
-    // Set calorie goal based on fitness goal
     switch (goal) {
       case "Build Muscle":
-        _caloriesGoal = 2800;  // Higher calories for muscle building
+        _caloriesGoal = 2800;
         break;
       case "Lose Weight":
-        _caloriesGoal = 1800;  // Lower calories for weight loss
+        _caloriesGoal = 1800;
         break;
       case "Improve Stamina":
-        _caloriesGoal = 2400;  // Moderate-high for endurance
+        _caloriesGoal = 2400;
         break;
       case "Maintain Fitness":
       default:
-        _caloriesGoal = 2200;  // Maintenance calories
+        _caloriesGoal = 2200;
         break;
-    }
-  }
-
-  Future<void> _loadHydration() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      setState(() => _isLoadingHydration = false);
-      return;
-    }
-
-    final today = _getDateString(DateTime.now());
-    
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .collection('hydration')
-          .doc(today)
-          .get();
-
-      if (mounted) {
-        setState(() {
-          _hydrationCurrent = doc.data()?['cups'] ?? 0;
-          _isLoadingHydration = false;
-        });
-      }
-    } catch (e) {
-      print('❌ Error loading hydration: $e');
-      if (mounted) {
-        setState(() => _isLoadingHydration = false);
-      }
-    }
-  }
-
-  Future<void> _addHydration() async {
-    // Prevent spam taps
-    if (_isAddingWater) return;
-    
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    if (_hydrationCurrent >= _hydrationGoal) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('🎉 Daily hydration goal reached!'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
-    setState(() => _isAddingWater = true);
-    
-    // ✨ Play animation
-    _waterAnimController.forward().then((_) {
-      _waterAnimController.reverse();
-    });
-
-    final today = _getDateString(DateTime.now());
-    final newCount = _hydrationCurrent + 1;
-
-    try {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .collection('hydration')
-          .doc(today)
-          .set({
-        'cups': newCount,
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-
-      setState(() {
-        _hydrationCurrent = newCount;
-      });
-
-      if (newCount == _hydrationGoal) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('💧 Hydration goal completed!'),
-            backgroundColor: Colors.blue,
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    } catch (e) {
-      print('❌ Error adding hydration: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Failed to update hydration'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      // Re-enable after 500ms debounce
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted) {
-          setState(() => _isAddingWater = false);
-        }
-      });
     }
   }
 
   Future<void> _loadCalories() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    try {
-      // Calculate calories based on completed workouts
-      final workoutsSnapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .collection('workouts')
-          .where('completed', isEqualTo: true)
-          .get();
-
-      int totalCalories = 0;
-      for (var doc in workoutsSnapshot.docs) {
-        // Each workout burns approximately 150 calories
-        totalCalories += 150;
-      }
-
-      if (mounted) {
-        setState(() {
-          _caloriesCurrent = totalCalories;
-        });
-      }
-    } catch (e) {
-      print('❌ Error loading calories: $e');
-    }
-  }
-
-  Future<void> _loadUserData() async {
-    setState(() {
-      _isLoadingStreak = true;
-      _isLoadingPoints = true;
-    });
+    // Get total workouts from provider instead of querying Firebase - workout provider 
+    final workoutProvider = context.read<WorkoutProvider>();
     
-    try {
-      // Load streak, points, and today's workout in parallel
-      final results = await Future.wait([
-        WorkoutPlanService.getCurrentStreak(),
-        WorkoutPlanService.getTotalPoints(),
-        WorkoutPlanService.getTodaysWorkout(),
-        WorkoutPlanService.isTodayWorkoutCompleted(),
-      ]).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          print('⚠️ Timeout loading user data, using defaults');
-          return [0, 0, WorkoutPlanService.weeklyPlan[0], false];
-        },
-      );
-      
-      if (mounted) {
-        setState(() {
-          _streakDays = results[0] as int;
-          _totalPoints = results[1] as int;
-          _todaysWorkout = results[2] as DailyWorkout;
-          _isTodayCompleted = results[3] as bool;
-          _isLoadingStreak = false;
-          _isLoadingPoints = false;
-        });
-        
-        // Reload calories after workout data is loaded
-        _loadCalories();
-      }
-    } catch (e) {
-      print('❌ Error loading user data: $e');
-      if (mounted) {
-        setState(() {
-          _streakDays = 0;
-          _totalPoints = 0;
-          _todaysWorkout = WorkoutPlanService.weeklyPlan[0];
-          _isTodayCompleted = false;
-          _isLoadingStreak = false;
-          _isLoadingPoints = false;
-        });
-      }
+    if (mounted) {
+      setState(() {
+        // Each workout burns approximately 150 calories
+        _caloriesCurrent = workoutProvider.totalWorkouts * 150;
+      });
     }
   }
 
-  String _getDateString(DateTime date) {
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-  }
+  // ----------- UI ------------------------------
 
   @override
   Widget build(BuildContext context) {
     final goal = widget.prefs?.goal ?? "Maintain Fitness";
     const dailyHighlight = "Remember to stretch!";
-
     final focusLabel = _focusBasedOnGoal(goal);
     final motivation = _motivationTip(goal);
 
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null) {
-      return _buildGuestHome(context, focusLabel, motivation, 0, 0, dailyHighlight);
+      return _buildGuestHome(context, focusLabel, motivation, dailyHighlight);
     }
 
-    return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+    // Use Consumer + provider for reactive user data 
+    // 1️ USER PROVIDER - For user name
+    return Consumer<UserProvider>(
+      builder: (context, userProvider, child) {
+        if (userProvider.isLoading) {
           return Scaffold(
             backgroundColor: AppColors.background,
             body: const Center(child: CircularProgressIndicator()),
           );
         }
 
-        String userName = 'User';
-        if (snapshot.hasData && snapshot.data!.exists) {
-          final data = snapshot.data!.data() as Map<String, dynamic>?;
-          userName = data?['name'] ?? user.displayName ?? 'User';
-        } else if (user.displayName != null && user.displayName!.isNotEmpty) {
-          userName = user.displayName!;
-        }
-
-        final firstName = userName.split(' ')[0];
+        final firstName = userProvider.userName.split(' ')[0];
 
         return _buildHomeContent(
           context,
           firstName,
           focusLabel,
           motivation,
-          _streakDays,
-          _totalPoints,
-          _isLoadingStreak,
-          _isLoadingPoints,
           dailyHighlight,
         );
       },
@@ -322,10 +113,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     String firstName,
     String focusLabel,
     String motivation,
-    int streakDays,
-    int totalPoints,
-    bool isLoadingStreak,
-    bool isLoadingPoints,
     String dailyHighlight,
   ) {
     return Scaffold(
@@ -343,7 +130,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header with name - IMPROVED
+                // Header with name using Consumer for streak
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -362,9 +149,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                             ),
                           ),
                           const SizedBox(height: 4),
-                          // Streak
-                          isLoadingStreak
-                              ? const Row(
+
+                          //  2️ WORKOUT PROVIDER - For streak
+                          Consumer<WorkoutProvider>(
+                            builder: (context, workout, child) {
+                              if (workout.isLoading) {
+                                return const Row(
                                   children: [
                                     SizedBox(
                                       width: 14,
@@ -382,68 +172,86 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                                       ),
                                     ),
                                   ],
-                                )
-                              : Text(
-                                  streakDays > 0
-                                      ? "$streakDays-day streak 🔥"
-                                      : "Start your streak! 💪",
-                                  style: const TextStyle(
-                                    fontFamily: "Poppins",
-                                    fontSize: 15,
-                                    color: Colors.black54,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                );
+                              }
+                              return Text(
+                                workout.streakDays > 0
+                                    ? "${workout.streakDays}-day streak 🔥"
+                                    : "Start your streak! 💪",
+                                style: const TextStyle(
+                                  fontFamily: "Poppins",
+                                  fontSize: 15,
+                                  color: Colors.black54,
+                                  fontWeight: FontWeight.w600,
                                 ),
+                              );
+                            },
+                          ),
                         ],
                       ),
                     ),
-                    // Points Badge - IMPROVED
-                    if (!isLoadingPoints)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [AppColors.primary, Colors.orangeAccent.shade400],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.primary.withOpacity(0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 4),
+                    // Points Badge with Consumer
+                    Consumer<WorkoutProvider>(
+                      builder: (context, workout, child) {
+                        if (workout.isLoading) {
+                          return const SizedBox.shrink();
+                        }
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [AppColors.primary, Colors.orangeAccent.shade400],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
                             ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.star_rounded, size: 20, color: Colors.white),
-                            const SizedBox(width: 6),
-                            Text(
-                              "$totalPoints pts",
-                              style: const TextStyle(
-                                fontFamily: "Poppins",
-                                fontSize: 14,
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.primary.withOpacity(0.3),
+                                blurRadius: 8,
+                                offset: const Offset(0, 4),
                               ),
-                            ),
-                          ],
-                        ),
-                      ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.star_rounded, size: 20, color: Colors.white),
+                              const SizedBox(width: 6),
+                              Text(
+                                "${workout.totalPoints} pts",
+                                style: const TextStyle(
+                                  fontFamily: "Poppins",
+                                  fontSize: 14,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
                   ],
                 ),
                 
                 const SizedBox(height: 28),
 
-                // Today's Workout Card
-                _todayWorkoutCard(context),
+                // 3 WORKOUT PROVIDER - For today's workout
+                Consumer<WorkoutProvider>(
+                  builder: (context, workout, child) {
+                    return _todayWorkoutCard(
+                      context,
+                      workout.todaysWorkout,
+                      workout.isTodayCompleted,
+                      workout.isLoading,
+                    );
+                  },
+                ),
 
                 const SizedBox(height: 20),
 
-                // Stats Row - IMPROVED (2 columns for better visibility)
+                // Stats Row
                 Row(
                   children: [
                     Expanded(
@@ -455,36 +263,63 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       ),
                     ),
                     const SizedBox(width: 12),
+                    // Hydration with Consumer
                     Expanded(
-                      child: GestureDetector(
-                        onTap: _addHydration,
-                        child: AnimatedBuilder(
-                          animation: _waterScaleAnim,
-                          builder: (context, child) {
-                            return Transform.scale(
-                              scale: _waterScaleAnim.value,
-                              child: _isLoadingHydration
-                                  ? Container(
-                                      constraints: const BoxConstraints(
-                                        minHeight: 150,
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 16, vertical: 16),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.accentBlue.withOpacity(0.3),
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      child: const Center(
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.black87,
-                                        ),
-                                      ),
-                                    )
-                                  : _buildHydrationCard(_hydrationCurrent / _hydrationGoal),
+                      // 3 HYDRATION PROVIDER - For water card
+                      child: Consumer<HydrationProvider>(
+                        builder: (context, hydration, child) {
+                          if (hydration.isLoading) {
+                            return Container(
+                              constraints: const BoxConstraints(minHeight: 150),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 16),
+                              decoration: BoxDecoration(
+                                color: AppColors.accentBlue.withOpacity(0.3),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: const Center(
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.black87,
+                                ),
+                              ),
                             );
-                          },
-                        ),
+                          }
+                          
+                          return GestureDetector(
+                            onTap: () async {
+                              final success = await hydration.addCup();
+                              
+                              if (mounted) {
+                                if (success) {
+                                  if (hydration.currentCups == hydration.goalCups) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('💧 Hydration goal completed!'),
+                                        backgroundColor: Colors.blue,
+                                        duration: Duration(seconds: 2),
+                                      ),
+                                    );
+                                  }
+                                } else if (hydration.currentCups >= hydration.goalCups) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('🎉 Daily hydration goal reached!'),
+                                      backgroundColor: Colors.green,
+                                      duration: Duration(seconds: 2),
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                            child: _buildHydrationCard(
+                              hydration.currentCups,
+                              hydration.goalCups,
+                              hydration.progress,
+                              hydration.isAdding,
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ],
@@ -542,8 +377,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  Widget _todayWorkoutCard(BuildContext context) {
-    if (_todaysWorkout == null) {
+  Widget _todayWorkoutCard(
+    BuildContext context,
+    DailyWorkout? workout,
+    bool isCompleted,
+    bool isLoading,
+  ) {
+    if (isLoading || workout == null) {
       return Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
@@ -560,8 +400,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         child: const Center(child: CircularProgressIndicator()),
       );
     }
-
-    final workout = _todaysWorkout!;
 
     // Rest Day Card
     if (workout.isRestDay) {
@@ -632,7 +470,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       );
     }
 
-    // Regular Workout Card - IMPROVED
+    // Regular Workout Card
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -670,12 +508,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           const SizedBox(height: 14),
           Row(
             children: [
-              // Workout Icon with gradient background
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [AppColors.navy.withOpacity(0.1), AppColors.secondary.withOpacity(0.1)],
+                    colors: [
+                      AppColors.navy.withOpacity(0.1),
+                      AppColors.secondary.withOpacity(0.1)
+                    ],
                   ),
                   borderRadius: BorderRadius.circular(16),
                 ),
@@ -717,7 +557,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ),
           const SizedBox(height: 16),
           // Action Button
-          if (_isTodayCompleted)
+          if (isCompleted)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 14),
@@ -729,7 +569,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.check_circle_rounded, size: 20, color: Colors.green.shade700),
+                  Icon(Icons.check_circle_rounded,
+                      size: 20, color: Colors.green.shade700),
                   const SizedBox(width: 8),
                   Text(
                     "Completed",
@@ -748,11 +589,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () async {
-                  // Navigate to workout detail
-                  final workoutDetails = WorkoutPlanService.getTodaysWorkoutDetails(workout);
-                  
+                  final workoutDetails =
+                      WorkoutPlanService.getTodaysWorkoutDetails(workout);
+
                   if (workoutDetails != null) {
-                    // Navigate to existing workout detail screen
                     await Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) => WorkoutDetailScreen(
@@ -762,9 +602,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       ),
                     );
                     // Reload data after returning
-                    _loadUserData();
+                    if (mounted) {
+                      context.read<WorkoutProvider>().loadWorkoutData();
+                      _loadCalories();
+                    }
                   } else {
-                    // Show message for workouts without detail screen
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
@@ -772,8 +614,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                           action: SnackBarAction(
                             label: 'Done',
                             onPressed: () async {
-                              await WorkoutPlanService.completeWorkout('All levels');
-                              _loadUserData();
+                              await context
+                                  .read<WorkoutProvider>()
+                                  .completeWorkout('All levels');
+                              _loadCalories();
                               if (mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
@@ -813,12 +657,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
+  // --------------- helper widget ----------------
   Widget _buildGuestHome(
     BuildContext context,
     String focusLabel,
     String motivation,
-    int streakDays,
-    int totalPoints,
     String dailyHighlight,
   ) {
     return _buildHomeContent(
@@ -826,10 +669,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       'Guest',
       focusLabel,
       motivation,
-      0,
-      0,
-      false,
-      false,
       dailyHighlight,
     );
   }
@@ -842,14 +681,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     bool isInteractive = false,
   }) {
     return Container(
-      constraints: const BoxConstraints(
-        minHeight: 150,
-      ),
+      constraints: const BoxConstraints(minHeight: 150),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: color,
         borderRadius: BorderRadius.circular(20),
-        border: isInteractive ? Border.all(color: Colors.blue.shade700, width: 2) : null,
+        border: isInteractive
+            ? Border.all(color: Colors.blue.shade700, width: 2)
+            : null,
         boxShadow: [
           BoxShadow(
             color: color.withOpacity(0.3),
@@ -1063,11 +902,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
-  Widget _buildHydrationCard(double progress) {
+  Widget _buildHydrationCard(
+    int current,
+    int goal,
+    double progress,
+    bool isAddingWater,
+  ) {
     return Container(
-      constraints: const BoxConstraints(
-        minHeight: 150,
-      ),
+      constraints: const BoxConstraints(minHeight: 150),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.accentBlue.withOpacity(0.3),
@@ -1093,10 +935,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   color: Colors.white.withOpacity(0.9),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.water_drop_rounded, size: 28, color: Colors.blue),
+                child: const Icon(Icons.water_drop_rounded,
+                    size: 28, color: Colors.blue),
               ),
               const Spacer(),
-              if (_isAddingWater)
+              if (isAddingWater)
                 const SizedBox(
                   width: 18,
                   height: 18,
@@ -1119,7 +962,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ),
           const SizedBox(height: 6),
           Text(
-            "$_hydrationCurrent / $_hydrationGoal glasses",
+            "$current / $goal glasses",
             style: const TextStyle(
               fontFamily: "Poppins",
               fontSize: 13,
@@ -1128,7 +971,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ),
           ),
           const SizedBox(height: 10),
-          // 🌊 Progress bar
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: LinearProgressIndicator(

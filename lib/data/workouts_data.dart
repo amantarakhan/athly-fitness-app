@@ -2,9 +2,9 @@
 import 'package:flutter/material.dart';
 import 'package:athlynew/models/workout.dart';
 
-final List<WorkoutCategory> workoutCategories = [
+final List<WorkoutCategory> workoutCategories = [ // the actual workouts data list (total 24 workout )
   // ---------- UPPER BODY ----------
-  WorkoutCategory(
+  WorkoutCategory( // each catagory have a list of workouts 
     id: 'upper',
     name: 'Upper Body',
     icon: Icons.fitness_center_rounded,

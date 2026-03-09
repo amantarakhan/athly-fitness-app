@@ -1,13 +1,13 @@
 
 import 'package:flutter/material.dart';
 
-class WorkoutCategory {
+class WorkoutCategory { // a class that define workouts catagories 
   final String id;
   final String name;
   final IconData icon;
   final List<Workout> workouts;
 
-  const WorkoutCategory({
+  const WorkoutCategory({ // constructor 
     required this.id,
     required this.name,
     required this.icon,
@@ -15,7 +15,8 @@ class WorkoutCategory {
   });
 }
 
-class Workout {
+class Workout { // a class that define workouts attributes 
+// each workout objects mush have there attriblutes 
   final String id;
   final String name;
   final String level;      // e.g. Beginner / Intermediate
@@ -23,7 +24,7 @@ class Workout {
   final String youtubeUrl;
   final String description;
 
-  const Workout({
+  const Workout({ // constructor  
     required this.id,
     required this.name,
     required this.level,

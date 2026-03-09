@@ -94,6 +94,6 @@ class _AuthGateState extends State<AuthGate> {
       );
     }
     
-    return targetScreen ?? const WelcomeScreen();
+    return targetScreen ?? const WelcomeScreen(); // if the target screen is null -> direct the user to the welcome screen 
   }
 }

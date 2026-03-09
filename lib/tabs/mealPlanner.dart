@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:athlynew/colors.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
+import 'package:athlynew/providers/hydration_provider.dart';
 
 // Import meals model + data
 import 'package:athlynew/models/meal.dart';
@@ -14,178 +14,17 @@ class MealPlanScreen extends StatefulWidget {
   State<MealPlanScreen> createState() => _MealPlanScreenState();
 }
 
-class _MealPlanScreenState extends State<MealPlanScreen> with SingleTickerProviderStateMixin {
-  int _hydrationCurrent = 0;
-  int _hydrationGoal = 8;
-  bool _isLoadingHydration = true;
-  bool _isAddingWater = false; // Prevent spam taps
-  
-  // Animation controller for water tap
-  late AnimationController _waterAnimController;
-  late Animation<double> _waterScaleAnim;
-  
-  // Grocery checklist state
+class _MealPlanScreenState extends State<MealPlanScreen> {
+  // Grocery checklist state (only UI-specific state remains)
   Map<String, bool> _groceryChecklist = {};
 
   @override
   void initState() {
     super.initState();
-    _loadHydration();
-    _checkAndResetHydration();
-    
-    // Setup water tap animation
-    _waterAnimController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _waterScaleAnim = Tween<double>(begin: 1.0, end: 1.1).animate(
-      CurvedAnimation(parent: _waterAnimController, curve: Curves.easeOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _waterAnimController.dispose();
-    super.dispose();
-  }
-
-  String _getDateString(DateTime date) {
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-  }
-
-  // 🔄 Check if we need to reset hydration for new day
-  Future<void> _checkAndResetHydration() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    final today = _getDateString(DateTime.now());
-
-    try {
-      final lastResetDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .collection('hydration_meta')
-          .doc('last_reset')
-          .get();
-
-      final lastResetDate = lastResetDoc.data()?['date'] as String?;
-
-      // If it's a new day, reset hasn't happened yet
-      if (lastResetDate != today) {
-        // Update last reset date
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .collection('hydration_meta')
-            .doc('last_reset')
-            .set({'date': today, 'timestamp': FieldValue.serverTimestamp()});
-
-        print('🔄 New day detected - hydration will start fresh');
-      }
-    } catch (e) {
-      print('⚠️ Error checking reset: $e');
-    }
-  }
-
-  Future<void> _loadHydration() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      setState(() => _isLoadingHydration = false);
-      return;
-    }
-
-    final today = _getDateString(DateTime.now());
-
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .collection('hydration')
-          .doc(today)
-          .get();
-
-      if (mounted) {
-        setState(() {
-          _hydrationCurrent = doc.data()?['cups'] ?? 0;
-          _isLoadingHydration = false;
-        });
-      }
-    } catch (e) {
-      print('❌ Error loading hydration: $e');
-      if (mounted) {
-        setState(() => _isLoadingHydration = false);
-      }
-    }
-  }
-
-  Future<void> _addHydration() async {
-    // Prevent spam taps
-    if (_isAddingWater) return;
-    
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    if (_hydrationCurrent >= _hydrationGoal) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('🎉 Daily hydration goal reached!'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
-    setState(() => _isAddingWater = true);
-    
-    // ✨ Play animation
-    _waterAnimController.forward().then((_) {
-      _waterAnimController.reverse();
+    // Load hydration data when screen initializes
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<HydrationProvider>().loadHydration();
     });
-
-    final today = _getDateString(DateTime.now());
-    final newCount = _hydrationCurrent + 1;
-
-    try {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .collection('hydration')
-          .doc(today)
-          .set({
-        'cups': newCount,
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-
-      setState(() {
-        _hydrationCurrent = newCount;
-      });
-
-      if (newCount == _hydrationGoal) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('💧 Hydration goal completed!'),
-            backgroundColor: Colors.blue,
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    } catch (e) {
-      print('❌ Error adding hydration: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Failed to update hydration'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      // Re-enable after 500ms debounce
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted) {
-          setState(() => _isAddingWater = false);
-        }
-      });
-    }
   }
 
   void _toggleGroceryItem(String item) {
@@ -194,27 +33,25 @@ class _MealPlanScreenState extends State<MealPlanScreen> with SingleTickerProvid
     });
   }
 
+  // -----------------UI -----------------
   @override
   Widget build(BuildContext context) {
-    // 🌮 get today's dynamic meals
+    //  get today's dynamic meals
     final todayPlan = planForDate(DateTime.now());
     final breakfast = todayPlan.breakfast;
     final lunch = todayPlan.lunch;
     final dinner = todayPlan.dinner;
 
-    // 🧺 Build grocery list from today's meals (unique ingredients)
+    //  Build grocery list from today's meals (unique ingredients)
     final groceryItems = <String>{
       ...breakfast.ingredients,
       ...lunch.ingredients,
       ...dinner.ingredients,
     }.toList();
 
-    // ⏱ total prep time from the 3 meals
+    //  total prep time from the 3 meals
     final totalPrepMinutes =
         breakfast.prepMinutes + lunch.prepMinutes + dinner.prepMinutes;
-
-    // Calculate hydration progress percentage
-    final hydrationProgress = _hydrationCurrent / _hydrationGoal;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -251,35 +88,64 @@ class _MealPlanScreenState extends State<MealPlanScreen> with SingleTickerProvid
                 // 💧 Water + Prep time row
                 Row(
                   children: [
+                    // Use Consumer for update hydration display
                     Expanded(
-                      child: GestureDetector(
-                        onTap: _addHydration,
-                        child: AnimatedBuilder(
-                          animation: _waterScaleAnim,
-                          builder: (context, child) {
-                            return Transform.scale(
-                              scale: _waterScaleAnim.value,
-                              child: _isLoadingHydration
-                                  ? Container(
-                                      constraints: const BoxConstraints(
-                                        minHeight: 150,
-                                      ),
-                                      padding: const EdgeInsets.all(16),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.accentBlue.withOpacity(0.3),
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      child: const Center(
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.black87,
-                                        ),
-                                      ),
-                                    )
-                                  : _buildHydrationCard(hydrationProgress),
+                      // HYDRATION PROVIDER - Same card as HomeScreen
+                      child: Consumer<HydrationProvider>(
+                        builder: (context, hydration, child) {
+                          if (hydration.isLoading) {
+                            return Container(
+                              constraints: const BoxConstraints(minHeight: 150),
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: AppColors.accentBlue.withOpacity(0.3),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: const Center(
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.black87,
+                                ),
+                              ),
                             );
-                          },
-                        ),
+                          }
+
+                          return GestureDetector(
+                            onTap: () async {
+                              // Call provider method to add water
+                              final success = await hydration.addCup(); // here is the useage of the provider 
+                              
+                              // Show feedback based on result
+                              if (mounted) {
+                                if (success) {
+                                  if (hydration.currentCups == hydration.goalCups) { // the user finish all 8 cups 
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('🎉 Daily hydration goal reached!'),
+                                        backgroundColor: Colors.green,
+                                        duration: Duration(seconds: 2),
+                                      ),
+                                    );
+                                  }
+                                } else if (hydration.currentCups >= hydration.goalCups) { //// the user already  finish all 8 cups and tap on the widget  
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('🎉 Daily hydration goal already reached!'),
+                                      backgroundColor: Colors.green,
+                                      duration: Duration(seconds: 2),
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                            child: _buildHydrationCard(
+                              hydration.currentCups,
+                              hydration.goalCups,
+                              hydration.progress,
+                              hydration.isAdding,
+                            ),
+                          );
+                        },
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -287,8 +153,7 @@ class _MealPlanScreenState extends State<MealPlanScreen> with SingleTickerProvid
                       child: _summaryStatCard(
                         icon: Icons.timer_outlined,
                         label: "Meal Prep Time",
-                        value:
-                            "${(totalPrepMinutes / 60).toStringAsFixed(1)} hr total",
+                        value: "${(totalPrepMinutes / 60).toStringAsFixed(1)} hr total",
                         caption: "for all meals",
                         bg: AppColors.secondary.withOpacity(0.3),
                       ),
@@ -403,11 +268,14 @@ class _MealPlanScreenState extends State<MealPlanScreen> with SingleTickerProvid
   }
 
   // 💧 Enhanced hydration card with progress bar
-  Widget _buildHydrationCard(double progress) {
+  Widget _buildHydrationCard(
+    int current,
+    int goal,
+    double progress,
+    bool isAddingWater,
+  ) {
     return Container(
-      constraints: const BoxConstraints(
-        minHeight: 150,
-      ),
+      constraints: const BoxConstraints(minHeight: 150),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.accentBlue.withOpacity(0.3),
@@ -433,10 +301,11 @@ class _MealPlanScreenState extends State<MealPlanScreen> with SingleTickerProvid
                   color: Colors.white.withOpacity(0.9),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.water_drop_rounded, size: 28, color: Colors.blue),
+                child: const Icon(Icons.water_drop_rounded,
+                    size: 28, color: Colors.blue),
               ),
               const Spacer(),
-              if (_isAddingWater)
+              if (isAddingWater)
                 const SizedBox(
                   width: 18,
                   height: 18,
@@ -459,7 +328,7 @@ class _MealPlanScreenState extends State<MealPlanScreen> with SingleTickerProvid
           ),
           const SizedBox(height: 6),
           Text(
-            "$_hydrationCurrent / $_hydrationGoal glasses",
+            "$current / $goal glasses",
             style: const TextStyle(
               fontFamily: "Poppins",
               fontSize: 13,
@@ -501,7 +370,6 @@ class _MealPlanScreenState extends State<MealPlanScreen> with SingleTickerProvid
 // Helper function to build meal images with fallback
 Widget _buildMealImage(String mealName, String imageUrl, String emoji) {
   if (imageUrl.isEmpty) {
-    // Fallback to emoji
     return Center(
       child: Text(
         emoji,
@@ -532,7 +400,6 @@ Widget _buildMealImage(String mealName, String imageUrl, String emoji) {
       );
     },
     errorBuilder: (context, error, stackTrace) {
-      // Fallback to emoji on error
       return Center(
         child: Text(
           emoji,
@@ -552,9 +419,7 @@ Widget _summaryStatCard({
   bool isInteractive = false,
 }) {
   return Container(
-    constraints: const BoxConstraints(
-      minHeight: 150,
-    ),
+    constraints: const BoxConstraints(minHeight: 150),
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
       color: bg,
@@ -842,7 +707,9 @@ Widget _nutritionBreakdownCard({
                   color: Colors.blue, label: "Fats", percent: fatsPercent),
               const SizedBox(height: 6),
               _macroRow(
-                  color: Colors.teal, label: "Protein", percent: proteinPercent),
+                  color: Colors.teal,
+                  label: "Protein",
+                  percent: proteinPercent),
             ],
           ),
         ),
@@ -923,12 +790,16 @@ Widget _groceryListByMeal({
   required Map<String, bool> checklist,
   required Function(String) onToggle,
 }) {
-  // Calculate total checked items
-  final breakfastChecked = breakfast.ingredients.where((item) => checklist[item] == true).length;
-  final lunchChecked = lunch.ingredients.where((item) => checklist[item] == true).length;
-  final dinnerChecked = dinner.ingredients.where((item) => checklist[item] == true).length;
-  
-  final totalItems = breakfast.ingredients.length + lunch.ingredients.length + dinner.ingredients.length;
+  final breakfastChecked =
+      breakfast.ingredients.where((item) => checklist[item] == true).length;
+  final lunchChecked =
+      lunch.ingredients.where((item) => checklist[item] == true).length;
+  final dinnerChecked =
+      dinner.ingredients.where((item) => checklist[item] == true).length;
+
+  final totalItems = breakfast.ingredients.length +
+      lunch.ingredients.length +
+      dinner.ingredients.length;
   final totalChecked = breakfastChecked + lunchChecked + dinnerChecked;
 
   return Container(
@@ -962,10 +833,14 @@ Widget _groceryListByMeal({
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: totalChecked == totalItems ? Colors.green.shade50 : Colors.blue.shade50,
+                color: totalChecked == totalItems
+                    ? Colors.green.shade50
+                    : Colors.blue.shade50,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: totalChecked == totalItems ? Colors.green.shade300 : Colors.blue.shade300,
+                  color: totalChecked == totalItems
+                      ? Colors.green.shade300
+                      : Colors.blue.shade300,
                 ),
               ),
               child: Text(
@@ -974,7 +849,9 @@ Widget _groceryListByMeal({
                   fontFamily: "Poppins",
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
-                  color: totalChecked == totalItems ? Colors.green.shade700 : Colors.blue.shade700,
+                  color: totalChecked == totalItems
+                      ? Colors.green.shade700
+                      : Colors.blue.shade700,
                 ),
               ),
             ),
@@ -1072,7 +949,9 @@ Widget _mealGrocerySection({
                 fontFamily: "Poppins",
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: checkedCount == items.length ? Colors.green.shade700 : Colors.black54,
+                color: checkedCount == items.length
+                    ? Colors.green.shade700
+                    : Colors.black54,
               ),
             ),
           ],
@@ -1087,9 +966,12 @@ Widget _mealGrocerySection({
               child: Row(
                 children: [
                   Icon(
-                    isChecked ? Icons.check_box : Icons.check_box_outline_blank,
+                    isChecked
+                        ? Icons.check_box
+                        : Icons.check_box_outline_blank,
                     size: 20,
-                    color: isChecked ? Colors.green.shade700 : Colors.black38,
+                    color:
+                        isChecked ? Colors.green.shade700 : Colors.black38,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -1099,7 +981,9 @@ Widget _mealGrocerySection({
                         fontFamily: "Poppins",
                         fontSize: 13,
                         color: isChecked ? Colors.black54 : Colors.black87,
-                        decoration: isChecked ? TextDecoration.lineThrough : TextDecoration.none,
+                        decoration: isChecked
+                            ? TextDecoration.lineThrough
+                            : TextDecoration.none,
                         decorationColor: Colors.black54,
                         decorationThickness: 2,
                       ),
@@ -1170,7 +1054,7 @@ class MealRecipeScreen extends StatelessWidget {
                   },
                 ),
               ),
-            
+
             if (meal.imageUrl.isNotEmpty) const SizedBox(height: 20),
 
             // Top summary card
@@ -1364,4 +1248,5 @@ class MealRecipeScreen extends StatelessWidget {
         ),
       ),
     );
-  }}
+  }
+}

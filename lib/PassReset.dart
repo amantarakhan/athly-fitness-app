@@ -9,37 +9,38 @@ class ResetPasswordScreen extends StatefulWidget {
   @override
   State<ResetPasswordScreen> createState() => _ResetPasswordScreenState();
 }
-
+// send a password reset email using the Firebase Authentication 
 class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController(); // only needs the email 
 
+// clean 
   @override
   void dispose() {
     _emailCtrl.dispose();
     super.dispose();
   }
 
-  // === This is the function from the PDF (with UI feedback added) ===
-  Future<void> resetPassword() async {
+  // === This is the function from the PDF - abdelbaset notes  ===
+  Future<void> resetPassword() async { // this the function that calles when the user press send the email 
     // 1) Close keyboard
     FocusScope.of(context).unfocus();
 
-    // 2) Validate form
+    // 2) Validate form - it there any thing wring the function will stop 
     final form = _formKey.currentState;
     if (form == null) return;
     if (!form.validate()) return;
 
-    final email = _emailCtrl.text.trim();
+    final email = _emailCtrl.text.trim(); // get the user input -> his email without spaces 
 
     try {
-      // Core line from the PDF:
+      // the core - here where the email is sending - handle pass reset externally 
       await FirebaseAuth.instance
           .sendPasswordResetEmail(email: email);
 
-      if (!mounted) return;
+      if (!mounted) return; // screen is still alive 
 
-      // Success message
+      // Success message 
       ScaffoldMessenger.of(context)
         ..clearSnackBars()
         ..showSnackBar(
@@ -68,7 +69,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       );
     }
   }
-
+// ------------------------ UI ----------------------
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -168,7 +169,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                             borderSide: BorderSide(color: cs.primary),
                           ),
                         ),
-                        validator: (value) {
+                        validator: (value) { // make sure the email is correct 
                           final v = value?.trim() ?? '';
                           if (v.isEmpty) return 'Email is required';
                           if (!v.contains('@') || !v.contains('.')) {
@@ -176,7 +177,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                           }
                           return null;
                         },
-                        onFieldSubmitted: (_) => resetPassword(),
+                        onFieldSubmitted: (_) => resetPassword(), // when press enter call the reset method
                       ),
 
                       const SizedBox(height: 20),

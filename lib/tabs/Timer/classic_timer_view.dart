@@ -11,6 +11,8 @@ class ClassicTimerView extends StatefulWidget {
 }
 
 class _ClassicTimerViewState extends State<ClassicTimerView> with SingleTickerProviderStateMixin {
+
+  //state variables 
   bool _isCountdown = true;
   bool _isRunning = false;
   Timer? _timer;

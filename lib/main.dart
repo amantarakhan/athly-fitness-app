@@ -9,8 +9,14 @@ import 'PassReset.dart';
 import 'AppShell.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
 
-void main() async {
+// Import providers
+import 'package:athlynew/providers/user_provider.dart';
+import 'package:athlynew/providers/workout_provider.dart';
+import 'package:athlynew/providers/hydration_provider.dart';
+
+void main() async { 
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   runApp(const AthlyApp());
@@ -21,25 +27,33 @@ class AthlyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        fontFamily: "Poppins", // global font
+    return MultiProvider(
+      providers: [ // providers 
+      //// the user finish all 8 cups (one copy only -> all of them use it ) 
+        ChangeNotifierProvider(create: (_) => UserProvider()),
+        ChangeNotifierProvider(create: (_) => WorkoutProvider()),
+        ChangeNotifierProvider(create: (_) => HydrationProvider()),
+      ],
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          fontFamily: "Poppins",
+        ),
+        home: const AuthGate(),
+        routes: { // named routes 
+          '/login': (context) => const LoginScreen(),
+          '/signup': (context) => const SignUpScreen(),
+          '/reset': (context) => const ResetPasswordScreen(),
+          '/goal': (context) => const GoalSettingScreen(),
+          '/app': (context) => const AppShell(),
+          '/welcome': (context) => const WelcomeScreen(),
+        },
       ),
-      home: const AuthGate(),
-      routes: {
-        '/login': (context) => const LoginScreen(),
-        '/signup': (context) => const SignUpScreen(),
-        '/reset': (context) => const ResetPasswordScreen(),
-        // ✅ REMOVED '/home' route - it's handled by AppShell, not as a standalone route
-        '/goal': (context) => const GoalSettingScreen(),
-        '/app': (context) => const AppShell(),
-        '/welcome': (context) => const WelcomeScreen(),
-      },
     );
   }
 }
 
+// -------------------UI -------------------
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
 
@@ -54,7 +68,6 @@ class WelcomeScreen extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // ✅ Title
                 Padding(
                   padding: const EdgeInsets.only(left: 24.0),
                   child: Align(
@@ -73,7 +86,6 @@ class WelcomeScreen extends StatelessWidget {
 
                 SizedBox(height: 6),
 
-                // ✅ Subtitle
                 Padding(
                   padding: const EdgeInsets.only(left: 24.0),
                   child: Align(
@@ -93,7 +105,6 @@ class WelcomeScreen extends StatelessWidget {
 
                 const SizedBox(height: 24),
 
-                // ✅ Illustration
                 Image.asset(
                   "assets/images/welcome.png",
                   height: 260,
@@ -102,13 +113,12 @@ class WelcomeScreen extends StatelessWidget {
 
                 const SizedBox(height: 40),
 
-                // ✅ Get Started button
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24.0),
                   child: SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: () => Navigator.pushNamed(context, '/signup'),
+                      onPressed: () => Navigator.pushNamed(context, '/signup'), // navigate to sign up 
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Color(0xFF1F3C64),
                         padding: const EdgeInsets.symmetric(vertical: 14),
@@ -130,7 +140,6 @@ class WelcomeScreen extends StatelessWidget {
 
                 const SizedBox(height: 12),
 
-                // ✅ Log in button
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24.0),
                   child: SizedBox(
@@ -168,10 +177,8 @@ class WelcomeScreen extends StatelessWidget {
 
                 const SizedBox(height: 40),
 
-                // ✅ Continue as Guest (clickable)
                 GestureDetector(
                   onTap: () {
-                    // 👉 Navigate as guest
                     Navigator.pushNamedAndRemoveUntil(
                         context, '/app', (route) => false);
                   },
@@ -188,7 +195,6 @@ class WelcomeScreen extends StatelessWidget {
 
                 const SizedBox(height: 40),
 
-                // ⚪ Terms and Conditions
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 32),
                   child: Text.rich(

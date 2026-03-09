@@ -6,6 +6,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class LoginScreen extends StatefulWidget {
+  // why statefull ? because the scereen reacts with the user input / errors etc..
   const LoginScreen({super.key});
 
   @override
@@ -13,12 +14,19 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _formKey = GlobalKey<FormState>();
+  final _formKey = GlobalKey<
+      FormState>(); // a key that controls the entire form important cuz it validate the data before send it to the firestore (before login logic)
+
+  //Store what the user data - so i can read it later in different screen
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
-  bool _obscure = true;
+
+  bool _obscure = true; // to make the password disappear
   bool _isSubmitting = false;
 
+// release resources such as TextEditingControllers when 
+//the widget is removed from the widget tree
+// good for the memory 
   @override
   void dispose() {
     _emailCtrl.dispose();
@@ -26,18 +34,23 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-Future<void> login() async { 
-try { 
-final userCredential = await FirebaseAuth.instance 
-.signInWithEmailAndPassword( 
-email: _emailCtrl.text.trim(), 
-password: _passwordCtrl.text.trim()); 
-} catch (e) { 
-} 
-}
+// this function finishs later (it talk to the internet (Firebase)) and doesnt return anything 
+  Future<void> login() async {
+    try{
+      // the FirebaseAuth.instance = The authentication system.
+      // await = Pasue until the Firebase replies 
+      final userCredential = await FirebaseAuth.instance // 
+          .signInWithEmailAndPassword(
+              email: _emailCtrl.text.trim(), // remove spaces 
+              password: _passwordCtrl.text.trim());
+    } catch (e) {}
+  }
+  // after this function is the login successful -> the userCredential will have the logged user information 
 
+
+// UI Helper method - reusable input decoration - insure consistency 
   InputDecoration _dec(String label, IconData icon, {Widget? suffix}) {
-    return InputDecoration(
+    return InputDecoration( // return an InputDecoration that have label , icon , suffix that could be changed 
       labelText: label,
       prefixIcon: Icon(icon, color: AppColors.textDark.withOpacity(.7)),
       suffixIcon: suffix,
@@ -46,19 +59,22 @@ password: _passwordCtrl.text.trim());
       contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: AppColors.textDark.withOpacity(.25), width: 1.2),
+        borderSide:
+            BorderSide(color: AppColors.textDark.withOpacity(.25), width: 1.2),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: AppColors.textDark.withOpacity(.25), width: 1.2),
+        borderSide:
+            BorderSide(color: AppColors.textDark.withOpacity(.25), width: 1.2),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: AppColors.textDark.withOpacity(.55), width: 1.6),
+        borderSide:
+            BorderSide(color: AppColors.textDark.withOpacity(.55), width: 1.6),
       ),
     );
   }
-
+/// ------------------- UI Logic ---------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -69,7 +85,8 @@ password: _passwordCtrl.text.trim());
           // 🌫️ Watermark (soft, non-interactive)
           Positioned(
             top: 12,
-            right: -10, // a tiny negative pushes it off-edge for a designer look
+            right:
+                -10, // a tiny negative pushes it off-edge for a designer look
             child: IgnorePointer(
               ignoring: true,
               child: Opacity(
@@ -84,7 +101,7 @@ password: _passwordCtrl.text.trim());
           ),
 
           // Content
-          SafeArea(
+          SafeArea( // safe area - بتكون لمكان اللي بعيد عن اطراف التلفون عشان ما ينقطش اي اشي 
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
               child: Form(
@@ -117,7 +134,7 @@ password: _passwordCtrl.text.trim());
 
                     const SizedBox(height: 10),
 
-                    // Helper row
+                    // Helper row - if the user doesnt have an account 
                     Row(
                       children: [
                         const Text(
@@ -130,7 +147,7 @@ password: _passwordCtrl.text.trim());
                         ),
                         const SizedBox(width: 6),
                         GestureDetector(
-                          onTap: () => Navigator.pushNamed(context, '/signup'),
+                          onTap: () => Navigator.pushNamed(context, '/signup'), // push the sign screen on top of the log in user can go back 
                           child: Text(
                             "Create New",
                             style: TextStyle(
@@ -147,21 +164,26 @@ password: _passwordCtrl.text.trim());
 
                     const SizedBox(height: 24),
 
+
+
                     // Email
                     TextFormField(
                       controller: _emailCtrl,
                       textInputAction: TextInputAction.next,
                       keyboardType: TextInputType.emailAddress,
                       decoration: _dec('Email', Icons.alternate_email_rounded),
-                      validator: (v) {
+                      // ensure that the text is not empty and have both @ and . (valid email) 
+                      validator: (v) { // v is the text inside the email field
                         final s = (v ?? '').trim();
                         if (s.isEmpty) return 'Email is required';
-                        if (!s.contains('@') || !s.contains('.')) return 'Enter a valid email';
+                        if (!s.contains('@') || !s.contains('.'))
+                          return 'Enter a valid email';
                         return null;
                       },
                     ),
 
                     const SizedBox(height: 16),
+
 
                     // Password
                     TextFormField(
@@ -173,12 +195,15 @@ password: _passwordCtrl.text.trim());
                         Icons.lock_outline_rounded,
                         suffix: IconButton(
                           onPressed: () => setState(() => _obscure = !_obscure),
-                          icon: Icon(
-                            _obscure ? Icons.visibility_rounded : Icons.visibility_off_rounded,
+                          icon: Icon( // make the icon hide the text 
+                            _obscure
+                                ? Icons.visibility_rounded
+                                : Icons.visibility_off_rounded,
                             color: AppColors.textDark.withOpacity(.7),
                           ),
                         ),
                       ),
+                      // the validator here to enure that the pass is not empty or less that 6 characters 
                       validator: (v) {
                         final s = (v ?? '').trim();
                         if (s.isEmpty) return 'Password is required';
@@ -211,10 +236,10 @@ password: _passwordCtrl.text.trim());
                                 decoration: TextDecoration.underline,
                               ),
                               recognizer: TapGestureRecognizer()
-                               ..onTap = () {
-      // 👇 REPLACE this line
-      Navigator.pushNamed(context, '/reset');
-    },
+                                ..onTap = () {
+                                  // 👇 REPLACE this line
+                                  Navigator.pushNamed(context, '/reset'); // psuh the reset above -> user can go back 
+                                },
                             ),
                           ],
                         ),
@@ -227,7 +252,7 @@ password: _passwordCtrl.text.trim());
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: _isSubmitting ? null : login  ,
+                        onPressed: _isSubmitting ? null : login, // when the user press the buttom -> call loginb function  (the above function ) ans navigation is held by the AUth gate 
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.navy,
                           foregroundColor: Colors.white,
@@ -239,7 +264,10 @@ password: _passwordCtrl.text.trim());
                         ),
                         child: _isSubmitting
                             ? const SizedBox(
-                                width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2),
+                                width: 22,
+                                height: 22,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Text(
                                 "Login Now",
@@ -257,7 +285,8 @@ password: _passwordCtrl.text.trim());
                     // Guest link
                     Center(
                       child: GestureDetector(
-                        onTap: () => Navigator.pushReplacementNamed(context, '/home'),
+                        onTap: () =>
+                            Navigator.pushReplacementNamed(context, '/home'), // replace the login screen with the home - user cannot go back 
                         child: Text(
                           "Skip Now",
                           style: TextStyle(
@@ -272,19 +301,18 @@ password: _passwordCtrl.text.trim());
                     ),
 
                     const SizedBox(height: 32),
-Center(
-  child: Text(
-    "Every step counts — keep moving!",
-    style: TextStyle(
-      fontFamily: "Poppins",
-      fontWeight: FontWeight.w500,
-      fontSize: 13,
-      fontStyle: FontStyle.italic,
-      color: AppColors.textDark.withOpacity(0.6),
-    ),
-  ),
-),
-
+                    Center(
+                      child: Text(
+                        "Every step counts — keep moving!",
+                        style: TextStyle(
+                          fontFamily: "Poppins",
+                          fontWeight: FontWeight.w500,
+                          fontSize: 13,
+                          fontStyle: FontStyle.italic,
+                          color: AppColors.textDark.withOpacity(0.6),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),

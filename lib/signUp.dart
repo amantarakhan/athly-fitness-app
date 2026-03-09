@@ -13,13 +13,20 @@ class SignUpScreen extends StatefulWidget {
 }
 
 class _SignUpScreenState extends State<SignUpScreen> {
+  // these are same as the login controlers 
   final _formKey = GlobalKey<FormState>();
+  // but here we have a name which handle the user name that will be in both the profile and the home 
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
+  // for the password icon 
   bool _obscure = true;
+  // disable button when the inputs is wrong 
   bool _isSubmitting = false;
 
+// same -  release resources such as TextEditingControllers when 
+//the widget is removed from the widget tree
+// good for the memory 
   @override
   void dispose() {
     _nameCtrl.dispose();
@@ -28,6 +35,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     super.dispose();
   }
 
+// an UI helper to enture consistency - same as the one in the login 
   InputDecoration _dec(String label, IconData icon, {Widget? suffix}) {
     return InputDecoration(
       labelText: label,
@@ -60,58 +68,63 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
+// here is the signup method that will be called when the user press sign up - async cuz its waitig for the Firebase authentication 
   Future<void> signUp() async {
-    print('\n🟦🟦🟦 SIGNUP STARTED 🟦🟦🟦');
+    print('\n🟦🟦🟦 SIGNUP STARTED 🟦🟦🟦');// in the console
     
-    if (_isSubmitting) {
+    if (_isSubmitting) { // if the user press sign up multiple time 
+    // if its true -> exit immerdiatly 
       print('⚠️ Already submitting, ignoring duplicate call');
       return;
     }
-
+// colse the keyboard - imporve the UX 
     FocusScope.of(context).unfocus();
 
-    final form = _formKey.currentState;
-    if (form == null || !form.validate()) {
+// from validation 
+    final form = _formKey.currentState; // gets the current form satate
+    if (form == null || !form.validate()) { // runs the validators and make sure there arent null 
       print('❌ Form validation failed');
-      return;
+      return; // exist 
     }
 
-    setState(() => _isSubmitting = true);
+
+    setState(() => _isSubmitting = true); // become loading - locks the UI until the proccess finish 
     print('✅ Form validated, starting signup process...');
 
-    try {
+    try { // reomve spaces form all inputs 
       final name = _nameCtrl.text.trim();
       final email = _emailCtrl.text.trim();
       final password = _passwordCtrl.text.trim();
-      
+      // read the user input - print in the console
       print('📝 Name: $name');
       print('📧 Email: $email');
       print('🔒 Password length: ${password.length}');
       
-      // STEP 1: Create Firebase Auth user
+      // STEP 1: Create Firebase Auth user -wait for the Firebase 
       print('\n🔵 STEP 1: Creating Firebase Auth user...');
       final userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
-
+      // validator - its not null 
       final user = userCredential.user;
       if (user == null) {
         throw Exception('User is null after creation');
       }
-
+      // else case - not null -> complete 
       print('✅ User created! UID: ${user.uid}');
 
-      // STEP 2: Update display name
+      // STEP 2: Update display name - for later so the user name display in the profile + home 
       print('\n🔵 STEP 2: Updating display name...');
-      await user.updateDisplayName(name);
+      await user.updateDisplayName(name); // the name the user enter 
       print('✅ Display name set to: $name');
 
       // STEP 3: Save to Firestore
       print('\n🔵 STEP 3: Saving to Firestore...');
       try {
-        await FirebaseFirestore.instance
+        await FirebaseFirestore.instance // wait for the fireBase 
+        // this create a user object on the Firebase with ID that have  ( name - email - time created at ) 
             .collection('users')
             .doc(user.uid)
             .set({
@@ -126,19 +139,21 @@ class _SignUpScreenState extends State<SignUpScreen> {
         // The user account is already created
       }
 
-      // STEP 4: Reload user
+      // STEP 4: Reload user - refresh the Firebase Auth data 
       print('\n🔵 STEP 4: Reloading user...');
       await user.reload();
       final freshUser = FirebaseAuth.instance.currentUser;
-      print('✅ User reloaded. DisplayName: ${freshUser?.displayName}');
+      print('✅ User reloaded. DisplayName: ${freshUser?.displayName}'); // ensure the name is available 
 
       // STEP 5: Check if widget is still mounted
+      //true → widget is still alive on the screen
+      //// false → widget has been removed (disposed)
       if (!mounted) {
         print('⚠️ Widget not mounted, cannot show UI updates');
         return;
       }
 
-      // STEP 6: Show success message
+      // STEP 6: Show success message - snack bar 
       print('\n🔵 STEP 5: Showing success message...');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -147,7 +162,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
           duration: const Duration(seconds: 2),
         ),
       );
-      print('✅ SnackBar shown');
+      print('✅ SnackBar shown'); // in the consol 
 
       // STEP 7: Wait a bit
       print('\n🔵 STEP 6: Waiting 500ms before navigation...');
@@ -162,7 +177,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
       print('\n🔵 STEP 7: Navigating to goal setting...');
       print('Current route: ${ModalRoute.of(context)?.settings.name}');
       
-      Navigator.pushReplacement(
+      Navigator.pushReplacement( // replace the sign up screen with the goalSettings - no going back 
         context,
         MaterialPageRoute(
           builder: (context) => const GoalSettingScreen(),
@@ -172,7 +187,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
       print('✅ Navigation method called!');
       print('🟩🟩🟩 SIGNUP COMPLETED SUCCESSFULLY! 🟩🟩🟩\n');
 
-    } on FirebaseAuthException catch (e) {
+
+
+    } on FirebaseAuthException catch (e) { // error handling 
       print('\n❌❌❌ FIREBASE AUTH EXCEPTION ❌❌❌');
       print('Code: ${e.code}');
       print('Message: ${e.message}');
@@ -190,7 +207,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
       } else {
         message = 'Sign up failed: ${e.message}';
       }
-
+    // in failure feedback - snackbar 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(message),
@@ -212,7 +229,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
           duration: const Duration(seconds: 4),
         ),
       );
-    } finally {
+    } finally { // always runs - cleanup 
       print('\n🔵 Resetting _isSubmitting flag...');
       if (mounted) {
         setState(() => _isSubmitting = false);
@@ -221,6 +238,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     }
   }
 
+// ------------------- UI --------------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -247,7 +265,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
           ),
 
           SafeArea(
-            child: SingleChildScrollView(
+            child: SingleChildScrollView( // عشان لو التلفون صغير يقدر ينزل لتحت 
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
               child: Form(
                 key: _formKey,
@@ -282,7 +300,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       controller: _nameCtrl,
                       textInputAction: TextInputAction.next,
                       decoration: _dec('Full Name', Icons.person_outline_rounded),
-                      validator: (v) {
+                      validator: (v) { // check if the name is null 
                         final s = (v ?? '').trim();
                         if (s.isEmpty) return 'Full name is required';
                         return null;
@@ -297,7 +315,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       textInputAction: TextInputAction.next,
                       keyboardType: TextInputType.emailAddress,
                       decoration: _dec('Email', Icons.alternate_email_rounded),
-                      validator: (v) {
+                      validator: (v) { // check if it null , @ , . 
                         final s = (v ?? '').trim();
                         if (s.isEmpty) return 'Email is required';
                         if (!s.contains('@') || !s.contains('.')) {
@@ -327,7 +345,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           ),
                         ),
                       ),
-                      validator: (v) {
+                      validator: (v) { // check if is null , less that 6 
                         final s = (v ?? '').trim();
                         if (s.isEmpty) return 'Password is required';
                         if (s.length < 6) {
@@ -335,7 +353,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         }
                         return null;
                       },
-                      onFieldSubmitted: (_) => signUp(),
+                      onFieldSubmitted: (_) => signUp(), // if the user press enter after pass inout -> call the sign up method 
                     ),
 
                     const SizedBox(height: 36),
@@ -344,7 +362,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: _isSubmitting ? null : signUp,
+                        onPressed: _isSubmitting ? null : signUp, // on pressed -> call sign up method 
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.navy,
                           foregroundColor: Colors.white,
@@ -397,7 +415,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                 decoration: TextDecoration.underline,
                               ),
                               recognizer: TapGestureRecognizer()
-                                ..onTap = () => Navigator.pushNamed(
+                                ..onTap = () => Navigator.pushNamed( // push the login page on top of the sign up - the user can go back 
                                       context,
                                       '/login',
                                     ),

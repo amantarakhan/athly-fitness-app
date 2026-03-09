@@ -5,12 +5,14 @@ import 'package:athlynew/AppShell.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-class GoalPreferences {
+
+class GoalPreferences { // data model that represents one completed onboarding result. - one user profile 
   final String goal;          // Build Muscle, Lose Weight, Improve Stamina, Maintain Fitness
   final String frequency;     // 3 times a week, 5 times a week, Every day
   final String timeOfDay;     // Morning, Afternoon, Evening
   final String level;         // Beginner, Intermediate, Advanced
 
+// a constructor - requires all fields 
   const GoalPreferences({
     required this.goal,
     required this.frequency,
@@ -18,6 +20,8 @@ class GoalPreferences {
     required this.level,
   });
 
+// cuz i need to store them in FireStore and its onlu accept maps not objects 
+// convert dart objects to Firestore Format 
   Map<String, dynamic> toJson() => {
         'goal': goal,
         'frequency': frequency,
@@ -26,7 +30,7 @@ class GoalPreferences {
       };
 }
 
-class GoalSettingScreen extends StatefulWidget {
+class GoalSettingScreen extends StatefulWidget { // statefull cuz i want the button to change when the user tap it 
   const GoalSettingScreen({super.key});
 
   @override
@@ -34,12 +38,14 @@ class GoalSettingScreen extends StatefulWidget {
 }
 
 class _GoalSettingScreenState extends State<GoalSettingScreen> {
+  //STATE VARIABLES - stores the answer chhosen by the user 
   String? _goal;
   String? _frequency;
   String? _timeOfDay;
   String? _level;
   bool _isSaving = false;
 
+// a lists of all the answers for the 4 questions 
   final _goals = const [
     'Build Muscle',
     'Lose Weight',
@@ -54,30 +60,34 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
   final _times = const ['Morning', 'Afternoon', 'Evening'];
   final _levels = const ['Beginner', 'Intermediate', 'Advanced'];
 
-  int get _answeredCount => [
+  int get _answeredCount => [ // collects all answers 
         _goal,
         _frequency,
         _timeOfDay,
         _level,
       ].where((e) => e != null).length;
 
+// this return T only when all answers are not null 
   bool get _canSave =>
       _goal != null && _frequency != null && _timeOfDay != null && _level != null;
 
+// ---------CORE LOGIC ------------------
   Future<void> _save() async {
-    if (!_canSave) {
+    if (!_canSave) { // not all the questions are answerd  
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please answer all questions')),
       );
       return;
     }
 
+// duplicate taps - exist 
     if (_isSaving) return;
-
+    // buton displayed - loading begin 
     setState(() => _isSaving = true);
     print('\n🟦🟦🟦 SAVING GOAL PREFERENCES 🟦🟦🟦');
 
     try {
+      // create a GoalPreferences object that has the value of this user 
       final prefs = GoalPreferences(
         goal: _goal!,
         frequency: _frequency!,
@@ -92,7 +102,7 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
 
       // Save to Firestore if user is logged in
       final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
+      if (user != null) { // where to save data - the correct user ID 
         print('🔵 Saving preferences to Firestore for user: ${user.uid}');
         
         await FirebaseFirestore.instance
@@ -105,25 +115,25 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
         print('⚠️ No user logged in, preferences not saved to Firestore');
       }
 
-      // Preload heavy images
+      // Preload heavy images before navigations 
       print('🔵 Preloading images...');
       await precacheImage(const AssetImage('assets/images/treadmill.png'), context);
       print('✅ Images preloaded!');
 
-      if (!mounted) {
+      if (!mounted) { // prevents crashes 
         print('⚠️ Widget not mounted, cannot navigate');
         return;
       }
-
+// navigate to the main app (AppShell) 
       print('🔵 Navigating to AppShell...');
-      Navigator.of(context).pushAndRemoveUntil(
+      Navigator.of(context).pushAndRemoveUntil( // no going back 
         MaterialPageRoute(builder: (context) => AppShell(prefs: prefs)),
         (route) => false,
       );
       print('✅ Navigation completed!');
       print('🟩🟩🟩 GOAL SETTING COMPLETED 🟩🟩🟩\n');
 
-    } catch (e, stackTrace) {
+    } catch (e, stackTrace) { // if any exception happen 
       print('\n❌❌❌ ERROR SAVING PREFERENCES ❌❌❌');
       print('Error: $e');
       print('StackTrace: $stackTrace');
@@ -136,13 +146,13 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
           backgroundColor: Colors.redAccent,
         ),
       );
-    } finally {
+    } finally { // alawyas runs 
       if (mounted) {
         setState(() => _isSaving = false);
       }
     }
   }
-
+// ----------------- UI ---------------------
   @override
   Widget build(BuildContext context) {
     final progress = _answeredCount / 4.0;
@@ -271,6 +281,9 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
   }
 }
 
+// ---------- UI helper ---------------- 
+
+
 class _QuestionCard extends StatelessWidget {
   final String title;
   final String? subtitle;
@@ -287,6 +300,7 @@ class _QuestionCard extends StatelessWidget {
   });
 
   @override
+  // have Question title , subtitile , options 
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
